@@ -4,6 +4,7 @@ import 'package:flutter/physics.dart';
 import 'package:flutter/scheduler.dart';
 import 'package:flutter/widgets.dart';
 
+import '../foundation/numeric_text.dart';
 import '../foundation/shape.dart';
 import '../overlays/anchored_overlay.dart';
 import '../theme/theme.dart';
@@ -534,11 +535,10 @@ class _CLSliderState extends State<CLSlider> with TickerProviderStateMixin {
                           child: Padding(
                             padding: const EdgeInsets.only(bottom: tail),
                             child: Center(
-                              child: Text(
+                              child: CLNumericText(
                                 widget.valueLabel!(widget.value),
                                 style: style,
-                                maxLines: 1,
-                                softWrap: false,
+                                alignment: Alignment.center,
                               ),
                             ),
                           ),

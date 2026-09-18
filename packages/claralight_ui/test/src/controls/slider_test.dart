@@ -251,7 +251,7 @@ void _sliderBubbleTests() {
     await tester.pumpAndSettle();
 
     expect(_bubble, findsNothing);
-    expect(find.text('50%'), findsNothing);
+    expect(find.byType(CLNumericText), findsNothing);
   });
 
   testWidgets('hover lifts a bubble off the handle and drops it again', (
@@ -266,7 +266,8 @@ void _sliderBubbleTests() {
     await gesture.moveTo(tester.getCenter(find.byType(CLSlider)));
     await tester.pumpAndSettle();
 
-    expect(find.text('50%'), findsOneWidget);
+    expect(find.byType(CLNumericText), findsOneWidget);
+    expect(find.bySemanticsLabel('50%'), findsOneWidget);
 
     // The overlay constrains its children tightly; the bubble must keep its own
     // size inside that rather than being stretched to the whole overlay.
@@ -275,7 +276,7 @@ void _sliderBubbleTests() {
     expect(
       size.height,
       closeTo(
-        tester.getSize(find.text('50%')).height +
+        tester.getSize(find.byType(CLNumericText)).height +
             CLSlider.bubblePadding.vertical +
             CLSlider.bubbleTailExtent,
         0.5,
@@ -305,6 +306,45 @@ void _sliderBubbleTests() {
     await gesture.moveTo(const Offset(5, 5));
     await tester.pumpAndSettle();
     expect(_bubble, findsNothing);
+  });
+
+  testWidgets('bubble uses CLNumericText to present value updates', (
+    tester,
+  ) async {
+    var value = 0.5;
+    late StateSetter update;
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Center(
+          child: StatefulBuilder(
+            builder: (context, setState) {
+              update = setState;
+              return SizedBox(
+                width: 300,
+                child: CLSlider(
+                  value: value,
+                  onChanged: (next) => setState(() => value = next),
+                  valueLabel: (v) => '${(v * 100).round()}%',
+                ),
+              );
+            },
+          ),
+        ),
+      ),
+    );
+
+    final gesture = await tester.createGesture(kind: PointerDeviceKind.mouse);
+    await gesture.addPointer(location: Offset.zero);
+    addTearDown(gesture.removePointer);
+    await gesture.moveTo(tester.getCenter(find.byType(CLSlider)));
+    await tester.pumpAndSettle();
+
+    expect(find.byType(CLNumericText), findsOneWidget);
+    expect(find.bySemanticsLabel('50%'), findsOneWidget);
+
+    update(() => value = 0.75);
+    await tester.pump();
+    expect(find.bySemanticsLabel('75%'), findsOneWidget);
   });
 
   testWidgets('bubble scales up from bottom without translating vertically', (
