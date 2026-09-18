@@ -436,6 +436,14 @@ class _ProgressSectionState extends State<_ProgressSection> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
+          CLSlider(
+            value: _progress,
+            min: 0,
+            max: 1,
+            onChanged: (v) => setState(() => _progress = v),
+            valueLabel: (v) => '${(v * 100).round()}%',
+          ),
+          const SizedBox(height: 12),
           GestureDetector(
             onTap: () => setState(
               () => _progress = _progress > 0.9 ? 0.15 : _progress + 0.25,
