@@ -460,12 +460,20 @@ class _ProgressSectionState extends State<_ProgressSection> {
             ),
           ),
           const SizedBox(height: 12),
+          // The same value on all three, so the ladder is the only variable:
+          // the gap does not scale with the rail, and neither does the dot the
+          // ends collapse to.
+          CLProgressBar(value: _progress, size: CLProgressSize.small),
+          const SizedBox(height: 8),
+          CLProgressBar(value: _progress, size: CLProgressSize.large),
+          const SizedBox(height: 12),
           Row(
             children: [
               const Expanded(child: CLProgressBar(value: null)),
               const SizedBox(width: 16),
               CLProgressRing(
                 value: _progress,
+                size: CLProgressSize.large,
                 child: Text(
                   '${(_progress * 100).round()}',
                   style: theme.typography.caption.copyWith(
@@ -473,6 +481,22 @@ class _ProgressSectionState extends State<_ProgressSection> {
                   ),
                 ),
               ),
+            ],
+          ),
+          const SizedBox(height: 12),
+          Row(
+            children: [
+              CLProgressRing(value: _progress, size: CLProgressSize.small),
+              const SizedBox(width: 12),
+              CLProgressRing(value: _progress),
+              const SizedBox(width: 24),
+              // No track while indeterminate: the arc breathes as the ring
+              // turns, and a fourth turn arrives a quarter at a time.
+              const CLProgressRing(value: null, size: CLProgressSize.small),
+              const SizedBox(width: 12),
+              const CLProgressRing(value: null),
+              const SizedBox(width: 12),
+              const CLProgressRing(value: null, size: CLProgressSize.large),
             ],
           ),
         ],
