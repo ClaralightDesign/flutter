@@ -1,4 +1,6 @@
 import 'package:claralight_ui/claralight_ui.dart';
+import 'dart:math' as math;
+
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -63,6 +65,7 @@ void main() {
   });
 
   _sliderShapeTests();
+  _sliderBubbleTests();
 }
 
 /// Track pieces are the flat ones, the handle is the tall one that is not the
@@ -135,6 +138,49 @@ void _sliderShapeTests() {
     expect(active.height, active.width);
   });
 
+  testWidgets('the rail keeps its width at either end of the range', (
+    tester,
+  ) async {
+    // A loosely constrained parent is what exposes this: a stack with any
+    // unpositioned child takes that child's size, so an empty segment left in
+    // the stack collapses the whole slider to nothing.
+    for (final value in [0.0, 1.0]) {
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Center(
+            child: SizedBox(
+              width: 300,
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [CLSlider(value: value, onChanged: (_) {})],
+              ),
+            ),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+      expect(tester.getSize(find.byType(CLSlider)).width, 300);
+    }
+  });
+
+  testWidgets('the line reaches both ends of the rail', (tester) async {
+    await tester.pumpWidget(_slider(value: 0));
+    final gesture = await tester.createGesture(kind: PointerDeviceKind.mouse);
+    await gesture.addPointer(location: Offset.zero);
+    addTearDown(gesture.removePointer);
+    await gesture.moveTo(
+      tester.getTopLeft(find.byType(CLSlider)) +
+          const Offset(2, CLSlider.hitHeight / 2),
+    );
+    await tester.pumpAndSettle();
+    expect(_handle(tester).left, closeTo(0, 0.01));
+
+    await tester.pumpWidget(_slider(value: 1));
+    await tester.pumpAndSettle();
+    final handle = _handle(tester);
+    expect(handle.left! + handle.width!, closeTo(300, 0.01));
+  });
+
   testWidgets('hover narrows the handle to a line at a fixed hover box', (
     tester,
   ) async {
@@ -165,5 +211,226 @@ void _sliderShapeTests() {
     await gesture.moveTo(const Offset(5, 5));
     await tester.pumpAndSettle();
     expect(_handle(tester).width, CLSlider.thumbWidth);
+  });
+}
+
+Widget _labelledSlider({
+  double value = 0.5,
+  ValueChanged<double>? onChanged,
+  String Function(double)? valueLabel,
+}) => MaterialApp(
+  home: Center(
+    child: SizedBox(
+      width: 300,
+      child: CLSlider(
+        value: value,
+        onChanged: onChanged ?? (_) {},
+        valueLabel: valueLabel ?? (v) => '${(v * 100).round()}%',
+      ),
+    ),
+  ),
+);
+
+Finder _bubble = find.byType(CompositedTransformFollower);
+
+double _bubbleTilt(WidgetTester tester) {
+  final transform = tester.widget<Transform>(
+    find.descendant(of: _bubble, matching: find.byType(Transform)).first,
+  );
+  final storage = transform.transform.storage;
+  return math.atan2(storage[1], storage[0]);
+}
+
+void _sliderBubbleTests() {
+  testWidgets('no bubble without a valueLabel', (tester) async {
+    await tester.pumpWidget(_slider());
+    final gesture = await tester.createGesture(kind: PointerDeviceKind.mouse);
+    await gesture.addPointer(location: Offset.zero);
+    addTearDown(gesture.removePointer);
+    await gesture.moveTo(tester.getCenter(find.byType(CLSlider)));
+    await tester.pumpAndSettle();
+
+    expect(_bubble, findsNothing);
+    expect(find.text('50%'), findsNothing);
+  });
+
+  testWidgets('hover lifts a bubble off the handle and drops it again', (
+    tester,
+  ) async {
+    await tester.pumpWidget(_labelledSlider());
+    expect(_bubble, findsNothing);
+
+    final gesture = await tester.createGesture(kind: PointerDeviceKind.mouse);
+    await gesture.addPointer(location: Offset.zero);
+    addTearDown(gesture.removePointer);
+    await gesture.moveTo(tester.getCenter(find.byType(CLSlider)));
+    await tester.pumpAndSettle();
+
+    expect(find.text('50%'), findsOneWidget);
+
+    // The overlay constrains its children tightly; the bubble must keep its own
+    // size inside that rather than being stretched to the whole overlay.
+    final size = tester.getSize(_bubble);
+    expect(size.width, lessThan(80));
+    expect(
+      size.height,
+      closeTo(
+        tester.getSize(find.text('50%')).height +
+            CLSlider.bubblePadding.vertical +
+            CLSlider.bubbleTailExtent,
+        0.5,
+      ),
+    );
+
+    final follower = tester.widget<CompositedTransformFollower>(_bubble);
+    // The foot hangs on the handle's centre, a gap above the line.
+    expect(follower.followerAnchor, Alignment.bottomCenter);
+    expect(
+      follower.offset.dx,
+      closeTo(
+        (300 - CLSlider.thumbWidth) * 0.5 + CLSlider.thumbWidth / 2,
+        0.01,
+      ),
+    );
+    expect(
+      follower.offset.dy,
+      closeTo(
+        CLSlider.hitHeight / 2 -
+            CLSlider.hoverLineHeight / 2 -
+            CLSlider.bubbleTipClearance,
+        0.01,
+      ),
+    );
+
+    await gesture.moveTo(const Offset(5, 5));
+    await tester.pumpAndSettle();
+    expect(_bubble, findsNothing);
+  });
+
+  testWidgets('bubble scales up from bottom without translating vertically', (
+    tester,
+  ) async {
+    await tester.pumpWidget(_labelledSlider());
+    final gesture = await tester.createGesture(kind: PointerDeviceKind.mouse);
+    await gesture.addPointer(location: Offset.zero);
+    addTearDown(gesture.removePointer);
+
+    await gesture.moveTo(tester.getCenter(find.byType(CLSlider)));
+    // Advance halfway through the opening animation.
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 60));
+
+    expect(_bubble, findsOneWidget);
+    final follower = tester.widget<CompositedTransformFollower>(_bubble);
+    // Vertical offset is fixed to flight, not translated up from the track.
+    expect(
+      follower.offset.dy,
+      closeTo(
+        CLSlider.hitHeight / 2 -
+            CLSlider.hoverLineHeight / 2 -
+            CLSlider.bubbleTipClearance,
+        0.01,
+      ),
+    );
+
+    // Scaling is applied with bottomCenter alignment so it pops from the tail tip.
+    final transforms = tester.widgetList<Transform>(
+      find.descendant(of: _bubble, matching: find.byType(Transform)),
+    );
+    final scaleTransform = transforms.elementAt(1);
+    expect(scaleTransform.alignment, Alignment.bottomCenter);
+    final scaleMatrix = scaleTransform.transform.storage;
+    final scaleValue = scaleMatrix[0];
+    expect(scaleValue, greaterThan(0.0));
+    expect(scaleValue, lessThanOrEqualTo(1.05));
+
+    await tester.pumpAndSettle();
+  });
+
+  testWidgets('the balloon trails the drag and swings back level', (
+    tester,
+  ) async {
+    var value = 0.2;
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Center(
+          child: StatefulBuilder(
+            builder: (context, setState) => SizedBox(
+              width: 300,
+              child: CLSlider(
+                value: value,
+                onChanged: (next) => setState(() => value = next),
+                valueLabel: (v) => '${(v * 100).round()}%',
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+
+    final drag = await tester.startGesture(
+      tester.getCenter(find.byType(CLSlider)) - const Offset(90, 0),
+    );
+    // Past the touch slop, so the arena settles on the horizontal drag.
+    await drag.moveBy(const Offset(30, 0));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 32));
+    expect(_bubble, findsOneWidget);
+
+    await drag.moveBy(const Offset(80, 0));
+    await tester.pump(const Duration(milliseconds: 16));
+    // Dragged right, so the top of the balloon is left of its foot.
+    expect(_bubbleTilt(tester), lessThan(0));
+    expect(_bubbleTilt(tester), greaterThanOrEqualTo(-CLSlider.bubbleMaxTilt));
+
+    await tester.pumpAndSettle();
+    expect(_bubbleTilt(tester), closeTo(0, 0.001));
+
+    await drag.up();
+    await tester.pumpAndSettle();
+    expect(_bubble, findsNothing);
+  });
+
+  testWidgets('reduced motion keeps the bubble level and at fixed geometry', (
+    tester,
+  ) async {
+    await tester.pumpWidget(
+      MediaQuery(
+        data: const MediaQueryData(disableAnimations: true),
+        child: _labelledSlider(),
+      ),
+    );
+
+    final drag = await tester.startGesture(
+      tester.getCenter(find.byType(CLSlider)) - const Offset(90, 0),
+    );
+    await drag.moveBy(const Offset(30, 0));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 32));
+    final lifted = tester.widget<CompositedTransformFollower>(_bubble);
+    expect(
+      lifted.offset.dy,
+      closeTo(
+        CLSlider.hitHeight / 2 -
+            CLSlider.hoverLineHeight / 2 -
+            CLSlider.bubbleTipClearance,
+        0.01,
+      ),
+    );
+
+    await drag.moveBy(const Offset(80, 0));
+    await tester.pump(const Duration(milliseconds: 16));
+    expect(_bubbleTilt(tester), 0);
+
+    await drag.up();
+    await tester.pumpAndSettle();
+    expect(_bubble, findsNothing);
+  });
+
+  testWidgets('the label is what assistive technology reads', (tester) async {
+    final handle = tester.ensureSemantics();
+    await tester.pumpWidget(_labelledSlider(value: 0.25));
+    expect(tester.getSemantics(find.byType(CLSlider)).value, '25%');
+    handle.dispose();
   });
 }

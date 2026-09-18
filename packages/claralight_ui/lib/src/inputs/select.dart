@@ -19,7 +19,6 @@ const double _kLeadingAllowance = 26;
 
 /// Claralight select dropdown variants.
 enum CLSelectVariant {
-
   /// Standard neutral control-fill select field.
   standard,
 

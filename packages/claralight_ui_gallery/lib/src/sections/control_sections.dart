@@ -219,10 +219,14 @@ class _SliderSection extends StatefulWidget {
 
 class _SliderSectionState extends State<_SliderSection> {
   double _value = 0.62;
+  double _temperature = 22;
 
   @override
   Widget build(BuildContext context) {
     final theme = CLTheme.of(context);
+    final caption = theme.typography.caption.copyWith(
+      color: theme.colors.textSecondary,
+    );
     return _SectionCard(
       title: 'CLSlider',
       child: Column(
@@ -230,13 +234,18 @@ class _SliderSectionState extends State<_SliderSection> {
         children: [
           CLSlider(value: _value, onChanged: (v) => setState(() => _value = v)),
           const SizedBox(height: 4),
-          Text(
-            '${(_value * 100).round()}%',
-            style: theme.typography.caption.copyWith(
-              color: theme.colors.textSecondary,
-            ),
+          Text('${(_value * 100).round()}%', style: caption),
+          const SizedBox(height: 16),
+          Text('悬停或拖动显示气泡数值', style: caption),
+          const SizedBox(height: 6),
+          CLSlider(
+            value: _temperature,
+            min: 16,
+            max: 30,
+            onChanged: (v) => setState(() => _temperature = v),
+            valueLabel: (v) => '${v.round()}°',
           ),
-          const SizedBox(height: 8),
+          const SizedBox(height: 16),
           const CLSlider(value: 0.3, onChanged: null),
         ],
       ),

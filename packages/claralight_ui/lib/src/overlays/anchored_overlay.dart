@@ -756,115 +756,13 @@ class _RenderCLAnchoredSurface extends RenderShiftedBox {
     ),
   };
 
-  Path _surfacePath() {
-    final body = _bodyRect;
-    final radius = math.min(
-      _borderRadius,
-      math.min(body.width, body.height) / 2,
-    );
-    final bodyPath = Path()
-      ..addRSuperellipse(
-        RSuperellipse.fromRectAndRadius(body, Radius.circular(radius)),
-      );
-    if (!_showArrow) return bodyPath;
-
-    final minCenter = radius + _arrowHalfWidth + 1;
-    final maxCenter = switch (_position) {
-      CLPopoverPosition.top ||
-      CLPopoverPosition.bottom => body.width - minCenter,
-      CLPopoverPosition.left ||
-      CLPopoverPosition.right => body.height - minCenter,
-    };
-    final center = maxCenter < minCenter
-        ? switch (_position) {
-            CLPopoverPosition.top || CLPopoverPosition.bottom => body.width / 2,
-            CLPopoverPosition.left ||
-            CLPopoverPosition.right => body.height / 2,
-          }
-        : _arrowCenter.clamp(minCenter, maxCenter);
-    return Path.combine(PathOperation.union, bodyPath, _tailPath(body, center));
-  }
-
-  Path _tailPath(Rect body, double center) {
-    const overlap = 1.5;
-    final width = _arrowHalfWidth;
-    final height = _arrowExtent;
-
-    Offset point(double cross, double outward) => switch (_position) {
-      CLPopoverPosition.top => Offset(center + cross, body.bottom + outward),
-      CLPopoverPosition.bottom => Offset(center - cross, body.top - outward),
-      CLPopoverPosition.left => Offset(body.right + outward, center - cross),
-      CLPopoverPosition.right => Offset(body.left - outward, center + cross),
-    };
-
-    // Two cubic segments per half keep the body join G2 with the flat edge.
-    // The compact 0.16w body handle controls the root rounding; the following
-    // cross-axis controls are derived so the shoulder join remains C2.
-    // Mirroring preserves tangent and curvature at the rounded tip, whose
-    // 0.225w handle gives a radius of about 0.446h for the fixed 24x7 tail.
-    final bodyControlCross = -0.84 * width;
-    final midCross = -0.50 * width;
-    final tipControlCross = -0.225 * width;
-    final shoulderControlCross =
-        (4 * midCross + bodyControlCross - tipControlCross) / 4;
-    final midControlCross = 2 * midCross - shoulderControlCross;
-
-    final leftBase = point(-width, 0);
-    final leftBodyControl = point(bodyControlCross, 0);
-    final leftShoulderControl = point(shoulderControlCross, 0);
-    final leftMid = point(midCross, 0.25 * height);
-    final leftMidControl = point(midControlCross, 0.50 * height);
-    final leftTipControl = point(tipControlCross, height);
-    final tip = point(0, height);
-    final rightTipControl = point(-tipControlCross, height);
-    final rightMidControl = point(-midControlCross, 0.50 * height);
-    final rightMid = point(-midCross, 0.25 * height);
-    final rightShoulderControl = point(-shoulderControlCross, 0);
-    final rightBodyControl = point(-bodyControlCross, 0);
-    final rightBase = point(width, 0);
-    final backingRight = point(width, -overlap);
-    final backingLeft = point(-width, -overlap);
-
-    return Path()
-      ..moveTo(leftBase.dx, leftBase.dy)
-      ..cubicTo(
-        leftBodyControl.dx,
-        leftBodyControl.dy,
-        leftShoulderControl.dx,
-        leftShoulderControl.dy,
-        leftMid.dx,
-        leftMid.dy,
-      )
-      ..cubicTo(
-        leftMidControl.dx,
-        leftMidControl.dy,
-        leftTipControl.dx,
-        leftTipControl.dy,
-        tip.dx,
-        tip.dy,
-      )
-      ..cubicTo(
-        rightTipControl.dx,
-        rightTipControl.dy,
-        rightMidControl.dx,
-        rightMidControl.dy,
-        rightMid.dx,
-        rightMid.dy,
-      )
-      ..cubicTo(
-        rightShoulderControl.dx,
-        rightShoulderControl.dy,
-        rightBodyControl.dx,
-        rightBodyControl.dy,
-        rightBase.dx,
-        rightBase.dy,
-      )
-      // Keep overlap inside the body for robust path union without moving the
-      // visible curve away from the body edge.
-      ..lineTo(backingRight.dx, backingRight.dy)
-      ..lineTo(backingLeft.dx, backingLeft.dy)
-      ..close();
-  }
+  Path _surfacePath() => clOverlaySurfacePath(
+    body: _bodyRect,
+    borderRadius: _borderRadius,
+    position: _position,
+    arrowCenter: _arrowCenter,
+    showArrow: _showArrow,
+  );
 
   Offset get _scaleOrigin => switch (_position) {
     CLPopoverPosition.top => Offset(_arrowCenter, size.height),
@@ -962,4 +860,136 @@ class _RenderCLAnchoredSurface extends RenderShiftedBox {
       ),
     );
   }
+}
+
+/// The outline an anchored surface is cut from: a smooth-cornered body, and the
+/// tail that points it at its anchor.
+///
+/// Public so the slider's value bubble can be cut from the same one. A bubble
+/// tethered to a handle and a tooltip tethered to its anchor are the same
+/// gesture, and two hand-fitted outlines would drift apart the moment either
+/// was adjusted. The tail's curve is written in fractions of [halfWidth] and
+/// [extent], so a small bubble takes a small tail rather than a different
+/// shape, and an [extent] of zero is the body alone — which is how a shape that
+/// grows its tail on the way up gets there.
+Path clOverlaySurfacePath({
+  required Rect body,
+  required double borderRadius,
+  required CLPopoverPosition position,
+  required double arrowCenter,
+  bool showArrow = true,
+  double halfWidth = _arrowHalfWidth,
+  double extent = _arrowExtent,
+}) {
+  final radius = math.min(borderRadius, math.min(body.width, body.height) / 2);
+  final bodyPath = Path()
+    ..addRSuperellipse(
+      RSuperellipse.fromRectAndRadius(body, Radius.circular(radius)),
+    );
+  if (!showArrow) return bodyPath;
+
+  final minCenter = radius + halfWidth + 1;
+  final maxCenter = switch (position) {
+    CLPopoverPosition.top || CLPopoverPosition.bottom => body.width - minCenter,
+    CLPopoverPosition.left ||
+    CLPopoverPosition.right => body.height - minCenter,
+  };
+  final center = maxCenter < minCenter
+      ? switch (position) {
+          CLPopoverPosition.top || CLPopoverPosition.bottom => body.width / 2,
+          CLPopoverPosition.left || CLPopoverPosition.right => body.height / 2,
+        }
+      : arrowCenter.clamp(minCenter, maxCenter);
+  return Path.combine(
+    PathOperation.union,
+    bodyPath,
+    _overlayTailPath(body, center, position, halfWidth, extent),
+  );
+}
+
+Path _overlayTailPath(
+  Rect body,
+  double center,
+  CLPopoverPosition position,
+  double halfWidth,
+  double extent,
+) {
+  const overlap = 1.5;
+  final width = halfWidth;
+  final height = extent;
+
+  Offset point(double cross, double outward) => switch (position) {
+    CLPopoverPosition.top => Offset(center + cross, body.bottom + outward),
+    CLPopoverPosition.bottom => Offset(center - cross, body.top - outward),
+    CLPopoverPosition.left => Offset(body.right + outward, center - cross),
+    CLPopoverPosition.right => Offset(body.left - outward, center + cross),
+  };
+
+  // Two cubic segments per half keep the body join G2 with the flat edge.
+  // The compact 0.16w body handle controls the root rounding; the following
+  // cross-axis controls are derived so the shoulder join remains C2.
+  // Mirroring preserves tangent and curvature at the rounded tip, whose
+  // 0.225w handle gives a radius of about 0.446h for the fixed 24x7 tail.
+  final bodyControlCross = -0.84 * width;
+  final midCross = -0.50 * width;
+  final tipControlCross = -0.225 * width;
+  final shoulderControlCross =
+      (4 * midCross + bodyControlCross - tipControlCross) / 4;
+  final midControlCross = 2 * midCross - shoulderControlCross;
+
+  final leftBase = point(-width, 0);
+  final leftBodyControl = point(bodyControlCross, 0);
+  final leftShoulderControl = point(shoulderControlCross, 0);
+  final leftMid = point(midCross, 0.25 * height);
+  final leftMidControl = point(midControlCross, 0.50 * height);
+  final leftTipControl = point(tipControlCross, height);
+  final tip = point(0, height);
+  final rightTipControl = point(-tipControlCross, height);
+  final rightMidControl = point(-midControlCross, 0.50 * height);
+  final rightMid = point(-midCross, 0.25 * height);
+  final rightShoulderControl = point(-shoulderControlCross, 0);
+  final rightBodyControl = point(-bodyControlCross, 0);
+  final rightBase = point(width, 0);
+  final backingRight = point(width, -overlap);
+  final backingLeft = point(-width, -overlap);
+
+  return Path()
+    ..moveTo(leftBase.dx, leftBase.dy)
+    ..cubicTo(
+      leftBodyControl.dx,
+      leftBodyControl.dy,
+      leftShoulderControl.dx,
+      leftShoulderControl.dy,
+      leftMid.dx,
+      leftMid.dy,
+    )
+    ..cubicTo(
+      leftMidControl.dx,
+      leftMidControl.dy,
+      leftTipControl.dx,
+      leftTipControl.dy,
+      tip.dx,
+      tip.dy,
+    )
+    ..cubicTo(
+      rightTipControl.dx,
+      rightTipControl.dy,
+      rightMidControl.dx,
+      rightMidControl.dy,
+      rightMid.dx,
+      rightMid.dy,
+    )
+    ..cubicTo(
+      rightShoulderControl.dx,
+      rightShoulderControl.dy,
+      rightBodyControl.dx,
+      rightBodyControl.dy,
+      rightBase.dx,
+      rightBase.dy,
+    )
+    // Keep overlap inside the body for robust path union without moving the
+    // visible curve away from the body edge.
+    ..lineTo(backingRight.dx, backingRight.dy)
+    ..lineTo(backingLeft.dx, backingLeft.dy)
+    ..close();
 }

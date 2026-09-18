@@ -297,8 +297,7 @@ class _CLTooltipState extends State<CLTooltip> with TickerProviderStateMixin {
                 : 1,
             scale: _disableAnimations
                 ? 1
-                : Curves.easeOutCubic.transform(_reveal.value) *
-                      _spring.value,
+                : Curves.easeOutCubic.transform(_reveal.value) * _spring.value,
             child: child!,
           );
         },
