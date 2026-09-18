@@ -121,7 +121,7 @@ class _CLSliderState extends State<CLSlider> with TickerProviderStateMixin {
   /// The bubble's flight: 0 is the capsule still sitting on the track, 1 is the
   /// bubble in the air. It carries its own overshoot, which is the pop.
   late final AnimationController _bubble;
-  final OverlayPortalController _bubblePortal = OverlayPortalController();
+  final OverlayPortalController _portal = OverlayPortalController();
   final LayerLink _link = LayerLink();
 
   /// The balloon's top, as a mass on a spring pinned to the handle. The tilt is
@@ -242,7 +242,12 @@ class _CLSliderState extends State<CLSlider> with TickerProviderStateMixin {
   void _setPressed(bool pressed, {bool tracking = false}) {
     _tracking = pressed && tracking;
     _pressed = pressed;
-    _syncBubble();
+    _syncOverlay();
+    if (!pressed &&
+        (widget.valueLabel == null ||
+            _bubble.status == AnimationStatus.dismissed)) {
+      if (_portal.isShowing) _portal.hide();
+    }
     if (_disableAnimations) {
       _press.stop();
       _press.value = pressed ? 1 : 0;
@@ -266,7 +271,7 @@ class _CLSliderState extends State<CLSlider> with TickerProviderStateMixin {
   void _setHovered(bool hovered) {
     if (hovered && !_enabled) return;
     _hovered = hovered;
-    _syncBubble();
+    _syncOverlay();
     if (_disableAnimations) {
       _hover.stop();
       _hover.value = hovered ? 1 : 0;
@@ -301,19 +306,24 @@ class _CLSliderState extends State<CLSlider> with TickerProviderStateMixin {
         (_layoutWidth - handleWidth) * _visual.value.clamp(0.0, 1.0);
   }
 
+  void _syncOverlay() {
+    final showBubble = widget.valueLabel != null && (_hovered || _pressed);
+    final needOverlay =
+        _pressed || showBubble || _bubble.isAnimating || _bubble.value > 0;
+    if (needOverlay && !_portal.isShowing) {
+      _balloonX = _handleCenter;
+      _balloonVelocity = 0;
+      _tilt.value = 0;
+      _portal.show();
+    }
+    _syncBubble();
+  }
+
   /// The bubble is up whenever the handle is a line — hover on a desktop, and
   /// the press itself on a touch drag, where there is no hover to reach it.
   void _syncBubble() {
     if (widget.valueLabel == null) return;
     final show = _enabled && (_hovered || _pressed);
-    if (show && !_bubblePortal.isShowing) {
-      // Start the balloon where the handle is, or it swings in from wherever
-      // the last drag abandoned it.
-      _balloonX = _handleCenter;
-      _balloonVelocity = 0;
-      _tilt.value = 0;
-      _bubblePortal.show();
-    }
     if (_disableAnimations) {
       // Fixed geometry, fade only: the bubble is already where it belongs and
       // only its opacity crosses.
@@ -342,7 +352,7 @@ class _CLSliderState extends State<CLSlider> with TickerProviderStateMixin {
   void _handleBubbleStatus(AnimationStatus status) {
     if (status != AnimationStatus.dismissed) return;
     _stopBalloon();
-    if (_bubblePortal.isShowing) _bubblePortal.hide();
+    if (!_pressed && _portal.isShowing) _portal.hide();
   }
 
   void _stopBalloon() {
@@ -382,7 +392,7 @@ class _CLSliderState extends State<CLSlider> with TickerProviderStateMixin {
     }
 
     _tilt.value = _tiltFor(target);
-    if (!_bubblePortal.isShowing) return;
+    if (!_portal.isShowing) return;
     final settled =
         (target - _balloonX).abs() < 0.05 && _balloonVelocity.abs() < 0.05;
     if (settled && _bubble.isCompleted) {
@@ -395,7 +405,7 @@ class _CLSliderState extends State<CLSlider> with TickerProviderStateMixin {
 
   void _ensureBalloonActive() {
     if (widget.valueLabel == null || _disableAnimations) return;
-    if (!_balloon.isActive && _bubblePortal.isShowing) {
+    if (!_balloon.isActive && _portal.isShowing) {
       _balloonElapsed = Duration.zero;
       _balloon.start();
     }
@@ -442,13 +452,31 @@ class _CLSliderState extends State<CLSlider> with TickerProviderStateMixin {
       value:
           widget.valueLabel?.call(widget.value) ??
           widget.value.toStringAsFixed(2),
-      child: widget.valueLabel == null
-          ? rail
-          : OverlayPortal(
-              controller: _bubblePortal,
-              overlayChildBuilder: _buildBubble,
-              child: CompositedTransformTarget(link: _link, child: rail),
-            ),
+      child: OverlayPortal(
+        controller: _portal,
+        overlayChildBuilder: _buildOverlay,
+        child: CompositedTransformTarget(link: _link, child: rail),
+      ),
+    );
+  }
+
+  Widget _buildOverlay(BuildContext context) {
+    return AnimatedBuilder(
+      animation: Listenable.merge([_press, _hover]),
+      builder: (context, _) {
+        return Stack(
+          children: [
+            if (_pressed)
+              const Positioned.fill(
+                child: MouseRegion(
+                  cursor: SystemMouseCursors.grabbing,
+                  child: SizedBox.expand(),
+                ),
+              ),
+            if (widget.valueLabel != null) _buildBubble(context),
+          ],
+        );
+      },
     );
   }
 
@@ -644,6 +672,10 @@ class _CLSliderState extends State<CLSlider> with TickerProviderStateMixin {
         return GestureDetector(
           behavior: HitTestBehavior.opaque,
           // Track taps spring the thumb; drags keep it glued to the finger.
+          onHorizontalDragDown: (details) {
+            _setPressed(true);
+            _update(details.localPosition, width);
+          },
           onTapDown: (details) {
             _setPressed(true);
             _update(details.localPosition, width);
@@ -760,8 +792,14 @@ class _CLSliderState extends State<CLSlider> with TickerProviderStateMixin {
           width: hoverBoxWidth,
           height: CLSlider.hitHeight,
           child: MouseRegion(
+            cursor: !_enabled
+                ? MouseCursor.defer
+                : (_pressed
+                      ? SystemMouseCursors.grabbing
+                      : SystemMouseCursors.grab),
             onEnter: (_) => _setHovered(true),
             onExit: (_) => _setHovered(false),
+            child: const SizedBox.expand(),
           ),
         ),
       ],

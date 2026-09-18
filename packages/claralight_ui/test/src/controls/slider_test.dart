@@ -3,6 +3,7 @@ import 'dart:math' as math;
 
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/rendering.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 void main() {
@@ -241,6 +242,51 @@ void _sliderShapeTests() {
       expect(_handle(tester).width, closeTo(CLSlider.hoverLineWidth, 0.01));
     },
   );
+
+  testWidgets('shows grab cursor on hover and grabbing cursor while pressed', (
+    tester,
+  ) async {
+    await tester.pumpWidget(_slider());
+
+    final gesture = await tester.createGesture(
+      pointer: 1,
+      kind: PointerDeviceKind.mouse,
+    );
+    await gesture.addPointer(location: tester.getCenter(find.byType(CLSlider)));
+    addTearDown(gesture.removePointer);
+    await tester.pumpAndSettle();
+
+    // Hover over handle: grab
+    expect(
+      RendererBinding.instance.mouseTracker.debugDeviceActiveCursor(1),
+      SystemMouseCursors.grab,
+    );
+
+    // Press down: grabbing everywhere, even far away
+    await gesture.down(tester.getCenter(find.byType(CLSlider)));
+    await tester.pump(const Duration(milliseconds: 16));
+    await gesture.moveBy(const Offset(1, 0));
+    expect(
+      RendererBinding.instance.mouseTracker.debugDeviceActiveCursor(1),
+      SystemMouseCursors.grabbing,
+    );
+
+    // Drag far away from the slider track: remains grabbing!
+    await gesture.moveBy(const Offset(30, 120));
+    await tester.pump();
+    expect(
+      RendererBinding.instance.mouseTracker.debugDeviceActiveCursor(1),
+      SystemMouseCursors.grabbing,
+    );
+
+    // Release: returns to basic (since pointer was dragged far away)
+    await gesture.up();
+    await tester.pumpAndSettle();
+    expect(
+      RendererBinding.instance.mouseTracker.debugDeviceActiveCursor(1),
+      SystemMouseCursors.basic,
+    );
+  });
 }
 
 Widget _labelledSlider({
