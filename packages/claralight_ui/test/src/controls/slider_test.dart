@@ -212,6 +212,35 @@ void _sliderShapeTests() {
     await tester.pumpAndSettle();
     expect(_handle(tester).width, CLSlider.thumbWidth);
   });
+
+  testWidgets(
+    'hovering on the right side of the handle at value 0 does not flicker',
+    (tester) async {
+      await tester.pumpWidget(_slider(value: 0));
+      final gesture = await tester.createGesture(kind: PointerDeviceKind.mouse);
+      await gesture.addPointer(location: Offset.zero);
+      addTearDown(gesture.removePointer);
+
+      // Hover over the right half of the resting capsule at value 0 (e.g. x = 16).
+      final topLeft = tester.getTopLeft(find.byType(CLSlider));
+      await gesture.moveTo(topLeft + const Offset(16, CLSlider.hitHeight / 2));
+      await tester.pumpAndSettle();
+
+      // Must be hovered steadily as a line without flickering back to capsule.
+      final handle = _handle(tester);
+      expect(handle.width, closeTo(CLSlider.hoverLineWidth, 0.01));
+      expect(_hoverBox(tester).left, lessThanOrEqualTo(0));
+      expect(
+        _hoverBox(tester).left! + _hoverBox(tester).width!,
+        greaterThanOrEqualTo(20),
+      );
+
+      // Pump additional frames to verify stability (no recursive flicker).
+      await tester.pump(const Duration(milliseconds: 50));
+      await tester.pump(const Duration(milliseconds: 50));
+      expect(_handle(tester).width, closeTo(CLSlider.hoverLineWidth, 0.01));
+    },
+  );
 }
 
 Widget _labelledSlider({

@@ -605,11 +605,24 @@ class _CLSliderState extends State<CLSlider> with TickerProviderStateMixin {
 
   double? _lastDragX;
 
+  (double, double) _hoverBoxHorizontal(double width) {
+    final fraction = _visual.value.clamp(0.0, 1.0);
+    final capsuleCenter =
+        CLSlider.thumbWidth / 2 + (width - CLSlider.thumbWidth) * fraction;
+    final lineCenter =
+        CLSlider.hoverLineWidth / 2 +
+        (width - CLSlider.hoverLineWidth) * fraction;
+    final left = math.min(capsuleCenter, lineCenter) - CLSlider.hoverWidth / 2;
+    final right = math.max(capsuleCenter, lineCenter) + CLSlider.hoverWidth / 2;
+    return (left, right);
+  }
+
   void _syncHoverAfterDrag() {
     final lastX = _lastDragX;
     _lastDragX = null;
     if (lastX != null) {
-      final isOver = (lastX - _handleCenter).abs() <= CLSlider.hoverWidth / 2;
+      final (hoverLeft, hoverRight) = _hoverBoxHorizontal(_layoutWidth);
+      final isOver = lastX >= hoverLeft && lastX <= hoverRight;
       if (!isOver && _hovered) {
         _setHovered(false);
       }
@@ -705,6 +718,9 @@ class _CLSliderState extends State<CLSlider> with TickerProviderStateMixin {
       color: theme.colors.track,
     );
 
+    final (hoverLeft, hoverRight) = _hoverBoxHorizontal(width);
+    final hoverBoxWidth = hoverRight - hoverLeft;
+
     return Stack(
       alignment: Alignment.centerLeft,
       children: [
@@ -736,11 +752,12 @@ class _CLSliderState extends State<CLSlider> with TickerProviderStateMixin {
           ),
         ),
         Positioned(
-          // Centered at the handle's own visual centre so the hit area stays
-          // glued to the handle across resting, hovering, and dragged states.
-          left: _handleCenter - CLSlider.hoverWidth / 2,
+          // Bounds encompass both the resting capsule and the narrowed line,
+          // invariant to hover state, so narrowing never pulls the box out
+          // from under the pointer that opened it.
+          left: hoverLeft,
           top: 0,
-          width: CLSlider.hoverWidth,
+          width: hoverBoxWidth,
           height: CLSlider.hitHeight,
           child: MouseRegion(
             onEnter: (_) => _setHovered(true),
