@@ -52,8 +52,8 @@ Positioned _sliderThumb(WidgetTester tester) => tester
     .widgetList<Positioned>(find.byType(Positioned))
     .firstWhere(
       (widget) =>
-          widget.width == CLSlider.thumbSize &&
-          widget.height == CLSlider.thumbSize,
+          widget.width == CLSlider.thumbWidth &&
+          widget.height == CLSlider.thumbHeight,
     );
 
 Finder _menuPanelFinder(WidgetTester tester) {
@@ -300,10 +300,19 @@ void main() {
     update(() => value = 0.8);
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 50));
-    expect(_sliderThumb(tester).left, greaterThan((300 - 18) * 0.2));
-    expect(_sliderThumb(tester).left, lessThan((300 - 18) * 0.8));
+    expect(
+      _sliderThumb(tester).left,
+      greaterThan((300 - CLSlider.thumbWidth) * 0.2),
+    );
+    expect(
+      _sliderThumb(tester).left,
+      lessThan((300 - CLSlider.thumbWidth) * 0.8),
+    );
     await tester.pumpAndSettle();
-    expect(_sliderThumb(tester).left, closeTo((300 - 18) * 0.8, 0.01));
+    expect(
+      _sliderThumb(tester).left,
+      closeTo((300 - CLSlider.thumbWidth) * 0.8, 0.01),
+    );
 
     final trackCenter = tester.getCenter(find.byType(CLSlider));
     await tester.tapAt(trackCenter + const Offset(-90, 0));
@@ -329,7 +338,10 @@ void main() {
       ),
     );
     await tester.pump();
-    expect(_sliderThumb(tester).left, closeTo((300 - 18) * 0.8, 0.01));
+    expect(
+      _sliderThumb(tester).left,
+      closeTo((300 - CLSlider.thumbWidth) * 0.8, 0.01),
+    );
   });
 
   testWidgets('slider snaps when reduced motion toggles during visual spring', (
@@ -353,10 +365,16 @@ void main() {
     update(() => value = 0.9);
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 50));
-    expect(_sliderThumb(tester).left, lessThan((300 - 18) * 0.9));
+    expect(
+      _sliderThumb(tester).left,
+      lessThan((300 - CLSlider.thumbWidth) * 0.9),
+    );
     _motionState(tester).setReduced(true);
     await tester.pump();
-    expect(_sliderThumb(tester).left, closeTo((300 - 18) * 0.9, 0.01));
+    expect(
+      _sliderThumb(tester).left,
+      closeTo((300 - CLSlider.thumbWidth) * 0.9, 0.01),
+    );
   });
 
   testWidgets(
