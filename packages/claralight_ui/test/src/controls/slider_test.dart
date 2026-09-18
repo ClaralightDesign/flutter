@@ -431,6 +431,138 @@ void _sliderBubbleTests() {
     expect(_bubble, findsNothing);
   });
 
+  testWidgets('the balloon swings even when dragging after pausing or hovering', (
+    tester,
+  ) async {
+    var value = 0.5;
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Center(
+          child: StatefulBuilder(
+            builder: (context, setState) => SizedBox(
+              width: 300,
+              child: CLSlider(
+                value: value,
+                onChanged: (next) => setState(() => value = next),
+                valueLabel: (v) => '${(v * 100).round()}%',
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+
+    // 1. First, hover and let the bubble fully settle (which stops the ticker).
+    final mouse = await tester.createGesture(kind: PointerDeviceKind.mouse);
+    await mouse.addPointer(location: Offset.zero);
+    addTearDown(mouse.removePointer);
+    await mouse.moveTo(tester.getCenter(find.byType(CLSlider)));
+    await tester.pumpAndSettle();
+    expect(_bubble, findsOneWidget);
+    expect(_bubbleTilt(tester), 0);
+
+    // 2. Now drag rightwards: ticker must reactivate and tilt the balloon.
+    final center = tester.getCenter(find.byType(CLSlider));
+    await mouse.down(center);
+    await mouse.moveBy(const Offset(30, 0));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 32));
+
+    await mouse.moveBy(const Offset(60, 0));
+    await tester.pump(const Duration(milliseconds: 16));
+    expect(_bubbleTilt(tester), lessThan(0));
+
+    // 3. Pause mid-drag and let it settle.
+    await tester.pumpAndSettle();
+    expect(_bubbleTilt(tester), closeTo(0, 0.001));
+
+    // 4. Drag leftwards: ticker must reactivate again and tilt rightwards.
+    await mouse.moveBy(const Offset(-30, 0));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 32));
+
+    await mouse.moveBy(const Offset(-60, 0));
+    await tester.pump(const Duration(milliseconds: 16));
+    expect(_bubbleTilt(tester), greaterThan(0));
+
+    await mouse.up();
+    await tester.pumpAndSettle();
+  });
+
+  testWidgets(
+    'handle restores to capsule after drag ends even if cursor is outside',
+    (tester) async {
+      var value = 0.5;
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Center(
+            child: StatefulBuilder(
+              builder: (context, setState) => SizedBox(
+                width: 300,
+                child: CLSlider(
+                  value: value,
+                  onChanged: (next) => setState(() => value = next),
+                ),
+              ),
+            ),
+          ),
+        ),
+      );
+
+      final gesture = await tester.createGesture(kind: PointerDeviceKind.mouse);
+      await gesture.addPointer(location: Offset.zero);
+      addTearDown(gesture.removePointer);
+
+      // Click and drag, releasing outside the hover box.
+      await gesture.moveTo(tester.getCenter(find.byType(CLSlider)));
+      await gesture.down(tester.getCenter(find.byType(CLSlider)));
+      await gesture.moveBy(const Offset(80, 50));
+      await tester.pump();
+      await gesture.up();
+      await tester.pumpAndSettle();
+
+      // Handle must restore to full capsule width.
+      expect(_handle(tester).width, CLSlider.thumbWidth);
+    },
+  );
+
+  testWidgets('balloon tilt angle is not artificially clamped to 12 degrees', (
+    tester,
+  ) async {
+    var value = 0.2;
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Center(
+          child: StatefulBuilder(
+            builder: (context, setState) => SizedBox(
+              width: 300,
+              child: CLSlider(
+                value: value,
+                onChanged: (next) => setState(() => value = next),
+                valueLabel: (v) => '${(v * 100).round()}%',
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+    final drag = await tester.startGesture(
+      tester.getCenter(find.byType(CLSlider)) - const Offset(90, 0),
+    );
+    await drag.moveBy(const Offset(30, 0));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 32));
+
+    // Fast drag moveBy.
+    await drag.moveBy(const Offset(90, 0));
+    await tester.pump(const Duration(milliseconds: 16));
+    // Tilt must exceed the old 12° artificial clamp.
+    expect(_bubbleTilt(tester).abs(), greaterThan(15 * math.pi / 180));
+
+    await drag.up();
+    await tester.pumpAndSettle();
+  });
+
   testWidgets('reduced motion keeps the bubble level and at fixed geometry', (
     tester,
   ) async {

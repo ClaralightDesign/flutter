@@ -84,8 +84,9 @@ class CLSlider extends StatefulWidget {
   /// How far the tail's tip stops short of the line it points at.
   static const double bubbleTipClearance = 2;
 
-  /// How far the balloon may lean out of true.
-  static const double bubbleMaxTilt = 12 * math.pi / 180;
+  /// How far the balloon may lean out of true. Unbounded by default up to
+  /// physical string limits (π / 2).
+  static const double bubbleMaxTilt = math.pi / 2;
 
   /// The bubble is the handle's own material, and the handle is white in either
   /// theme, so what is written on it is a fixed ink rather than a themed text
@@ -359,6 +360,10 @@ class _CLSliderState extends State<CLSlider> with TickerProviderStateMixin {
   static const double _balloonDamping = 20;
 
   void _handleBalloonTick(Duration elapsed) {
+    if (_balloonElapsed == Duration.zero) {
+      _balloonElapsed = elapsed;
+      return;
+    }
     final delta = (elapsed - _balloonElapsed).inMicroseconds / 1e6;
     _balloonElapsed = elapsed;
     final target = _handleCenter;
@@ -388,6 +393,14 @@ class _CLSliderState extends State<CLSlider> with TickerProviderStateMixin {
     }
   }
 
+  void _ensureBalloonActive() {
+    if (widget.valueLabel == null || _disableAnimations) return;
+    if (!_balloon.isActive && _bubblePortal.isShowing) {
+      _balloonElapsed = Duration.zero;
+      _balloon.start();
+    }
+  }
+
   /// The lag read as an angle: the balloon's top sits at [_balloonX], so the
   /// string it hangs from is exactly as long as the distance from the handle to
   /// the top of the bubble.
@@ -398,10 +411,7 @@ class _CLSliderState extends State<CLSlider> with TickerProviderStateMixin {
         CLSlider.bubbleTailExtent +
         (_bubbleSize?.height ?? CLSlider.thumbHeight);
     if (string <= 0) return 0;
-    final sine = ((_balloonX - target) / string).clamp(-1.0, 1.0);
-    return math
-        .asin(sine)
-        .clamp(-CLSlider.bubbleMaxTilt, CLSlider.bubbleMaxTilt);
+    return math.atan2(_balloonX - target, string);
   }
 
   @override
@@ -593,6 +603,19 @@ class _CLSliderState extends State<CLSlider> with TickerProviderStateMixin {
     return size;
   }
 
+  double? _lastDragX;
+
+  void _syncHoverAfterDrag() {
+    final lastX = _lastDragX;
+    _lastDragX = null;
+    if (lastX != null) {
+      final isOver = (lastX - _handleCenter).abs() <= CLSlider.hoverWidth / 2;
+      if (!isOver && _hovered) {
+        _setHovered(false);
+      }
+    }
+  }
+
   Widget _buildInteractiveSlider({
     required CLThemeData theme,
     required Color activeColor,
@@ -612,17 +635,30 @@ class _CLSliderState extends State<CLSlider> with TickerProviderStateMixin {
             _setPressed(true);
             _update(details.localPosition, width);
           },
-          onTapUp: (_) => _setPressed(false),
-          onTapCancel: () => _setPressed(false),
+          onTapUp: (_) {
+            if (!_tracking) _setPressed(false);
+          },
+          onTapCancel: () {
+            if (!_tracking) _setPressed(false);
+          },
           onHorizontalDragStart: (details) {
+            _lastDragX = details.localPosition.dx;
             _setPressed(true, tracking: true);
             _update(details.localPosition, width);
+            _ensureBalloonActive();
           },
-          onHorizontalDragUpdate: (details) =>
-              _update(details.localPosition, width),
-          onHorizontalDragEnd: (_) => _setPressed(false),
+          onHorizontalDragUpdate: (details) {
+            _lastDragX = details.localPosition.dx;
+            _update(details.localPosition, width);
+            _ensureBalloonActive();
+          },
+          onHorizontalDragEnd: (_) {
+            _setPressed(false);
+            _syncHoverAfterDrag();
+          },
           onHorizontalDragCancel: () {
             if (_tracking) _setPressed(false);
+            _syncHoverAfterDrag();
           },
           child: _buildTrack(
             theme: theme,
@@ -700,10 +736,9 @@ class _CLSliderState extends State<CLSlider> with TickerProviderStateMixin {
           ),
         ),
         Positioned(
-          // Measured from the resting capsule, not from the line: a box that
-          // slid into the corner with the line could slide out from under the
-          // cursor that opened it.
-          left: thumbLeft + CLSlider.thumbWidth / 2 - CLSlider.hoverWidth / 2,
+          // Centered at the handle's own visual centre so the hit area stays
+          // glued to the handle across resting, hovering, and dragged states.
+          left: _handleCenter - CLSlider.hoverWidth / 2,
           top: 0,
           width: CLSlider.hoverWidth,
           height: CLSlider.hitHeight,
