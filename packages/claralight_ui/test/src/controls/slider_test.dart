@@ -67,6 +67,7 @@ void main() {
 
   _sliderShapeTests();
   _sliderBubbleTests();
+  _sliderSnapTests();
 }
 
 /// Track pieces are the flat ones, the handle is the tall one that is not the
@@ -679,5 +680,143 @@ void _sliderBubbleTests() {
     await tester.pumpWidget(_labelledSlider(value: 0.25));
     expect(tester.getSemantics(find.byType(CLSlider)).value, '25%');
     handle.dispose();
+  });
+}
+
+/// The rail a snap test drags along: 300 wide, one snap point at the middle.
+///
+/// [CLSlider.pressLineWidth] is the width the value is measured over, so a
+/// pointer standing at local [_snapX] + [CLSlider.pressLineWidth] / 2 is
+/// standing exactly on the point.
+const double _usable = 300 - CLSlider.pressLineWidth;
+const double _snapX = 0.5 * _usable;
+
+double _localX(double pointer) => pointer + CLSlider.pressLineWidth / 2;
+
+Widget _snappingSlider(void Function(double) record) => MaterialApp(
+  home: Center(
+    child: SizedBox(
+      width: 300,
+      child: StatefulBuilder(
+        builder: (context, setState) => _SnapHarness(record: record),
+      ),
+    ),
+  ),
+);
+
+class _SnapHarness extends StatefulWidget {
+  final void Function(double) record;
+
+  const _SnapHarness({required this.record});
+
+  @override
+  State<_SnapHarness> createState() => _SnapHarnessState();
+}
+
+class _SnapHarnessState extends State<_SnapHarness> {
+  double _value = 0;
+
+  @override
+  Widget build(BuildContext context) => CLSlider(
+    value: _value,
+    snapPoints: const [0.5],
+    onChanged: (value) {
+      widget.record(value);
+      setState(() => _value = value);
+    },
+  );
+}
+
+void _sliderSnapTests() {
+  testWidgets('a snap point reports its exact value', (tester) async {
+    final reported = <double>[];
+    await tester.pumpWidget(_snappingSlider(reported.add));
+    final rail = tester.getTopLeft(find.byType(CLSlider));
+
+    // Dead on the point.
+    var gesture = await tester.startGesture(
+      rail + Offset(_localX(_snapX), CLSlider.hitHeight / 2),
+    );
+    await tester.pump();
+    expect(reported.last, 0.5);
+    await gesture.up();
+    await tester.pumpAndSettle();
+
+    // Three pixels past it: near enough that the bend is under half a pixel,
+    // so the value is still the point itself rather than a hair beside it.
+    reported.clear();
+    gesture = await tester.startGesture(
+      rail + Offset(_localX(_snapX + 3), CLSlider.hitHeight / 2),
+    );
+    await tester.pump();
+    expect(reported.last, 0.5);
+    await gesture.up();
+    await tester.pumpAndSettle();
+  });
+
+  testWidgets('values beside a snap point stay reachable', (tester) async {
+    final reported = <double>[];
+    await tester.pumpWidget(_snappingSlider(reported.add));
+    final rail = tester.getTopLeft(find.byType(CLSlider));
+
+    // At the edge of the radius the pull has fallen to nothing, so the pointer
+    // maps straight through — this is what keeps the value continuous.
+    var gesture = await tester.startGesture(
+      rail +
+          Offset(_localX(_snapX + CLSlider.snapRadius), CLSlider.hitHeight / 2),
+    );
+    await tester.pump();
+    expect(reported.last, closeTo((_snapX + CLSlider.snapRadius) / _usable, 1e-9));
+    await gesture.up();
+    await tester.pumpAndSettle();
+
+    // Well outside it, nothing is bent at all.
+    reported.clear();
+    gesture = await tester.startGesture(
+      rail + Offset(_localX(_snapX + 40), CLSlider.hitHeight / 2),
+    );
+    await tester.pump();
+    expect(reported.last, closeTo((_snapX + 40) / _usable, 1e-9));
+    await gesture.up();
+    await tester.pumpAndSettle();
+  });
+
+  testWidgets('crossing a snap point never jumps the value', (tester) async {
+    final reported = <double>[];
+    await tester.pumpWidget(_snappingSlider(reported.add));
+    final rail = tester.getTopLeft(find.byType(CLSlider));
+
+    // A mouse, whose slop is a single pixel, so the sweep below is not spent
+    // winning the gesture arena.
+    final gesture = await tester.startGesture(
+      rail + Offset(_localX(_snapX - 40), CLSlider.hitHeight / 2),
+      kind: PointerDeviceKind.mouse,
+    );
+    await gesture.moveBy(const Offset(4, 0));
+    await tester.pump();
+
+    final values = <double>[];
+    for (var pointer = _snapX - 30; pointer <= _snapX + 30; pointer += 1) {
+      await gesture.moveTo(
+        rail + Offset(_localX(pointer), CLSlider.hitHeight / 2),
+      );
+      await tester.pump();
+      values.add(reported.last);
+    }
+    await gesture.up();
+    await tester.pumpAndSettle();
+
+    // The point is passed.
+    expect(values.first, lessThan(0.5));
+    expect(values.last, greaterThan(0.5));
+
+    // A dead zone that pinned the value would let go of it with a jump the
+    // width of the radius. The bend has no jump anywhere: a pixel of pointer
+    // never buys more than the exponent's worth of rail.
+    for (var index = 1; index < values.length; index++) {
+      final step = (values[index] - values[index - 1]) * _usable;
+      expect(step, greaterThanOrEqualTo(-1e-9));
+      expect(step, lessThan(3.5));
+    }
   });
 }

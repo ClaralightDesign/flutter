@@ -1,6 +1,7 @@
 import 'dart:math' as math;
 
 import 'package:flutter/physics.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter/scheduler.dart';
 import 'package:flutter/widgets.dart';
 
@@ -25,6 +26,10 @@ import '../theme/theme.dart';
 /// squeezed out of the capsule rises into a bubble carrying the value, tethered
 /// to the handle like a balloon on a string — its foot stays over the handle
 /// and its body trails behind the drag, swinging back when the drag stops.
+///
+/// [snapPoints] give the rail places the handle is drawn to. The pull is soft:
+/// no value is ever out of reach, the handle only grows heavy over a point and
+/// breaks free once the pointer has pushed far enough past it.
 class CLSlider extends StatefulWidget {
   final double value;
   final ValueChanged<double>? onChanged;
@@ -40,6 +45,12 @@ class CLSlider extends StatefulWidget {
   /// value is already spelled out beside it does not need one.
   final String Function(double value)? valueLabel;
 
+  /// Values the handle is pulled toward as it passes them, in the slider's own
+  /// units. The pull is magnetic rather than a grid: every value in between
+  /// stays reachable, a snap point only takes more of the pointer's travel to
+  /// cross than the rail around it does.
+  final List<double>? snapPoints;
+
   const CLSlider({
     super.key,
     required this.value,
@@ -48,6 +59,7 @@ class CLSlider extends StatefulWidget {
     this.max = 1,
     this.activeColor,
     this.valueLabel,
+    this.snapPoints,
   }) : assert(min < max);
 
   static const double trackHeight = 6;
@@ -71,6 +83,17 @@ class CLSlider extends StatefulWidget {
   static const double hoverWidth = 28;
 
   static const double hitHeight = 32;
+
+  /// How near a [snapPoints] entry the pointer must come for the point to take
+  /// hold of it. Kept under half [hoverWidth] so that the handle, which lags
+  /// the pointer by at most [_snapExponent]'s share of this distance, is still
+  /// under the cursor when the drag ends.
+  static const double snapRadius = 14;
+
+  /// How sharply the pull falls off across [snapRadius]. Above 1 the pointer
+  /// stalls dead on the point and recovers full speed by the radius, which is
+  /// what keeps the value continuous where a pinned dead zone would jump.
+  static const double _snapExponent = 3;
 
   /// The bubble's own padding, and the tail it points at the handle with — the
   /// tooltip's tail, cut small.
@@ -153,6 +176,13 @@ class _CLSliderState extends State<CLSlider> with TickerProviderStateMixin {
   bool _tracking = false;
   bool _disableAnimations = false;
 
+  /// Where the pointer was at the previous [_update], so a snap point can be
+  /// caught being crossed. Cleared with the press, so the next drag does not
+  /// open with a tick for ground it never covered.
+  double? _snapTickX;
+
+  static const double _snapEpsilon = 0.5;
+
   @override
   void initState() {
     super.initState();
@@ -234,14 +264,75 @@ class _CLSliderState extends State<CLSlider> with TickerProviderStateMixin {
   void _update(Offset localPosition, double width) {
     if (!_enabled) return;
     final usable = width - CLSlider.pressLineWidth;
-    final fraction = ((localPosition.dx - CLSlider.pressLineWidth / 2) / usable)
-        .clamp(0.0, 1.0);
+    final x = localPosition.dx - CLSlider.pressLineWidth / 2;
+    final snaps = _snapPositions(usable);
+    _tickOverSnapPoints(x, snaps);
+    final fraction = (_magnetize(x, snaps) / usable).clamp(0.0, 1.0);
     widget.onChanged!(widget.min + fraction * (widget.max - widget.min));
+  }
+
+  /// [CLSlider.snapPoints] in the pointer's own units, which is where the pull
+  /// belongs: a magnet is a distance the hand travels, not a share of a range,
+  /// and it should feel the same on a slider counting to one as on one
+  /// counting to ten thousand.
+  List<double> _snapPositions(double usable) {
+    final points = widget.snapPoints;
+    if (points == null || points.isEmpty) return const [];
+    final span = widget.max - widget.min;
+    return [
+      for (final point in points)
+        (point.clamp(widget.min, widget.max) - widget.min) / span * usable,
+    ];
+  }
+
+  /// The pointer, pulled toward whichever snap point it is passing.
+  ///
+  /// Not a dead zone that pins the value and lets go of it with a jump: the
+  /// pointer's own coordinate is bent — slowly near the point, at full speed
+  /// again by the edge of the radius — so the value stays continuous the whole
+  /// way across and the handle merely drags its feet and then breaks free.
+  double _magnetize(double x, List<double> snaps) {
+    if (snaps.isEmpty) return x;
+    var nearest = snaps.first;
+    var distance = (x - nearest).abs();
+    for (final snap in snaps) {
+      final candidate = (x - snap).abs();
+      if (candidate < distance) {
+        distance = candidate;
+        nearest = snap;
+      }
+    }
+    if (distance >= CLSlider.snapRadius) return x;
+    final offset =
+        CLSlider.snapRadius *
+        math.pow(distance / CLSlider.snapRadius, CLSlider._snapExponent) *
+        (x < nearest ? -1 : 1);
+    // Near enough that the gap is under half a pixel: report the point itself,
+    // so a snap point yields the exact number rather than a fraction of a
+    // pixel beside it and a value label reading 49.99998%.
+    return offset.abs() < _snapEpsilon ? nearest : nearest + offset;
+  }
+
+  /// A tick as the handle crosses a snap point. What crosses is the pointer
+  /// rather than the bent value, so the tick arrives under the finger.
+  void _tickOverSnapPoints(double x, List<double> snaps) {
+    final previous = _snapTickX;
+    _snapTickX = x;
+    if (previous == null || !_tracking || snaps.isEmpty) return;
+    final low = math.min(previous, x);
+    final high = math.max(previous, x);
+    for (final snap in snaps) {
+      if (snap > low && snap <= high) {
+        HapticFeedback.selectionClick();
+        return;
+      }
+    }
   }
 
   void _setPressed(bool pressed, {bool tracking = false}) {
     _tracking = pressed && tracking;
     _pressed = pressed;
+    if (!pressed) _snapTickX = null;
     _syncOverlay();
     if (!pressed &&
         (widget.valueLabel == null ||
