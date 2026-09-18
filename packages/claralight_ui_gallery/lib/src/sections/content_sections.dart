@@ -359,7 +359,7 @@ class _AnimatedNumberSectionState extends State<_AnimatedNumberSection> {
   Widget build(BuildContext context) {
     final theme = CLTheme.of(context);
     return _SectionCard(
-      title: 'CLAnimatedNumber',
+      title: 'CLNumericText',
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
@@ -367,7 +367,7 @@ class _AnimatedNumberSectionState extends State<_AnimatedNumberSection> {
             height: 52,
             child: Align(
               alignment: Alignment.centerRight,
-              child: CLAnimatedNumber(
+              child: CLNumericText.number(
                 _cents,
                 key: const Key('animated-number-demo'),
                 formatter: _formatCents,

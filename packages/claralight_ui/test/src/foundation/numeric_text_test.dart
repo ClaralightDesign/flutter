@@ -7,8 +7,8 @@ import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart';
 import 'package:flutter_test/flutter_test.dart';
 
-const _boundaryKey = Key('animated-number-boundary');
-const _numberKey = Key('animated-number');
+const _boundaryKey = Key('numeric-text-boundary');
+const _numberKey = Key('numeric-text');
 
 Widget _host(
   Widget child, {
@@ -121,7 +121,7 @@ int _alphaSum(
 
 Future<Uint8List> _transitionFrame(
   WidgetTester tester, {
-  required CLNumberTrend trend,
+  required CLNumericTextTrend trend,
 }) async {
   final value = ValueNotifier<num>(1);
   addTearDown(value.dispose);
@@ -133,7 +133,7 @@ Future<Uint8List> _transitionFrame(
           height: 60,
           child: ValueListenableBuilder<num>(
             valueListenable: value,
-            builder: (context, current, child) => CLAnimatedNumber(
+            builder: (context, current, child) => CLNumericText.number(
               current,
               key: _numberKey,
               trend: trend,
@@ -152,12 +152,52 @@ Future<Uint8List> _transitionFrame(
   return (await _raster(tester)).bytes;
 }
 
+Future<Uint8List> _textTransitionFrame(
+  WidgetTester tester, {
+  required String from,
+  required String to,
+  required CLNumericTextTrend trend,
+  Duration at = const Duration(milliseconds: 90),
+}) async {
+  // Unmount first, so the scene under test starts from `from` rather than from
+  // whatever the previous call left animating behind the same key.
+  await tester.pumpWidget(const SizedBox.shrink());
+
+  final text = ValueNotifier<String>(from);
+  addTearDown(text.dispose);
+  await tester.pumpWidget(
+    _host(
+      _boundary(
+        SizedBox(
+          width: 120,
+          height: 60,
+          child: ValueListenableBuilder<String>(
+            valueListenable: text,
+            builder: (context, current, child) => CLNumericText(
+              current,
+              key: _numberKey,
+              trend: trend,
+              alignment: Alignment.center,
+            ),
+          ),
+        ),
+        width: 120,
+        height: 60,
+      ),
+    ),
+  );
+  text.value = to;
+  await tester.pump();
+  await tester.pump(at);
+  return (await _raster(tester)).bytes;
+}
+
 void main() {
   test('constructor rejects non-finite values', () {
-    expect(() => CLAnimatedNumber(double.nan), throwsAssertionError);
-    expect(() => CLAnimatedNumber(double.infinity), throwsAssertionError);
+    expect(() => CLNumericText.number(double.nan), throwsAssertionError);
+    expect(() => CLNumericText.number(double.infinity), throwsAssertionError);
     expect(
-      () => CLAnimatedNumber(double.negativeInfinity),
+      () => CLNumericText.number(double.negativeInfinity),
       throwsAssertionError,
     );
   });
@@ -170,7 +210,7 @@ void main() {
 
     await tester.pumpWidget(
       _host(
-        CLAnimatedNumber(
+        CLNumericText.number(
           12.5,
           key: _numberKey,
           formatter: (value) {
@@ -212,7 +252,7 @@ void main() {
     }
 
     await tester.pumpWidget(
-      _host(const CLAnimatedNumber(1811, key: _numberKey), style: ambient),
+      _host(const CLNumericText.number(1811, key: _numberKey), style: ambient),
     );
     final defaultWidth = tester.getSize(find.byKey(_numberKey)).width;
     expect(
@@ -232,7 +272,7 @@ void main() {
     );
     await tester.pumpWidget(
       _host(
-        const CLAnimatedNumber(
+        const CLNumericText.number(
           1811,
           key: ValueKey('pnum-number'),
           style: proportional,
@@ -248,7 +288,7 @@ void main() {
 
   testWidgets('formatter must return one line', (tester) async {
     await tester.pumpWidget(
-      _host(CLAnimatedNumber(1, formatter: (_) => '1\n2')),
+      _host(CLNumericText.number(1, formatter: (_) => '1\n2')),
     );
     expect(tester.takeException(), isAssertionError);
   });
@@ -262,7 +302,7 @@ void main() {
       _host(
         ValueListenableBuilder<num>(
           valueListenable: value,
-          builder: (context, current, child) => CLAnimatedNumber(
+          builder: (context, current, child) => CLNumericText.number(
             current,
             key: _numberKey,
             style: const TextStyle(
@@ -301,7 +341,7 @@ void main() {
       _host(
         ValueListenableBuilder<num>(
           valueListenable: value,
-          builder: (context, current, child) => CLAnimatedNumber(
+          builder: (context, current, child) => CLNumericText.number(
             current,
             key: _numberKey,
             style: const TextStyle(
@@ -341,7 +381,7 @@ void main() {
           ValueListenableBuilder<num>(
             valueListenable: value,
             builder: (context, current, child) =>
-                CLAnimatedNumber(current, alignment: Alignment.centerRight),
+                CLNumericText.number(current, alignment: Alignment.centerRight),
           ),
           width: 160,
           height: 60,
@@ -373,7 +413,7 @@ void main() {
         _boundary(
           ValueListenableBuilder<num>(
             valueListenable: value,
-            builder: (context, current, child) => CLAnimatedNumber(
+            builder: (context, current, child) => CLNumericText.number(
               current,
               key: _numberKey,
               formatter: (number) => '\$$number%',
@@ -437,7 +477,7 @@ void main() {
         _boundary(
           ValueListenableBuilder<num>(
             valueListenable: value,
-            builder: (context, current, child) => CLAnimatedNumber(
+            builder: (context, current, child) => CLNumericText.number(
               current,
               formatter: (number) => number == 0 ? r'$1' : r'$1%',
               alignment: Alignment.centerLeft,
@@ -482,11 +522,11 @@ void main() {
   ) async {
     final increasing = await _transitionFrame(
       tester,
-      trend: CLNumberTrend.increasing,
+      trend: CLNumericTextTrend.increasing,
     );
     final decreasing = await _transitionFrame(
       tester,
-      trend: CLNumberTrend.decreasing,
+      trend: CLNumericTextTrend.decreasing,
     );
 
     expect(decreasing, isNot(orderedEquals(increasing)));
@@ -501,7 +541,7 @@ void main() {
       _host(
         ValueListenableBuilder<num>(
           valueListenable: value,
-          builder: (context, current, child) => CLAnimatedNumber(
+          builder: (context, current, child) => CLNumericText.number(
             current,
             key: _numberKey,
             formatter: (number) => 'المجموع ${number.toInt()} ر.س',
@@ -530,7 +570,7 @@ void main() {
       _host(
         ValueListenableBuilder<num>(
           valueListenable: value,
-          builder: (context, current, child) => CLAnimatedNumber(
+          builder: (context, current, child) => CLNumericText.number(
             current,
             key: _numberKey,
             formatter: (number) => number.floor().toString(),
@@ -555,7 +595,7 @@ void main() {
       _host(
         ValueListenableBuilder<bool>(
           valueListenable: expanded,
-          builder: (context, useExpandedFormat, child) => CLAnimatedNumber(
+          builder: (context, useExpandedFormat, child) => CLNumericText.number(
             7,
             key: _numberKey,
             formatter: useExpandedFormat ? (_) => r'$7,000.00' : null,
@@ -583,7 +623,7 @@ void main() {
       _host(
         ValueListenableBuilder<bool>(
           valueListenable: expanded,
-          builder: (context, large, child) => CLAnimatedNumber(
+          builder: (context, large, child) => CLNumericText.number(
             large ? 1000 : 1,
             key: _numberKey,
             style: TextStyle(fontSize: large ? 48 : 20),
@@ -610,7 +650,7 @@ void main() {
         ValueListenableBuilder<num>(
           valueListenable: value,
           builder: (context, current, child) =>
-              CLAnimatedNumber(current, key: _numberKey),
+              CLNumericText.number(current, key: _numberKey),
         ),
         disableAnimations: true,
       ),
@@ -642,7 +682,7 @@ void main() {
           ValueListenableBuilder<num>(
             valueListenable: value,
             builder: (context, current, child) =>
-                CLAnimatedNumber(current, key: _numberKey),
+                CLNumericText.number(current, key: _numberKey),
           ),
           disableAnimations: disableAnimations,
         ),
@@ -676,7 +716,7 @@ void main() {
           ValueListenableBuilder<num>(
             valueListenable: value,
             builder: (context, current, child) =>
-                CLAnimatedNumber(current, key: _numberKey),
+                CLNumericText.number(current, key: _numberKey),
           ),
           tickerEnabled: enabled,
         ),
@@ -705,7 +745,7 @@ void main() {
       _host(
         ValueListenableBuilder<num>(
           valueListenable: value,
-          builder: (context, current, child) => CLAnimatedNumber(
+          builder: (context, current, child) => CLNumericText.number(
             current,
             key: _numberKey,
             semanticsLabel: 'Total $current',
@@ -736,7 +776,7 @@ void main() {
       await tester.pumpWidget(
         _host(
           _boundary(
-            CLAnimatedNumber(42, key: _numberKey, alignment: alignment),
+            CLNumericText.number(42, key: _numberKey, alignment: alignment),
             width: 200,
             height: 60,
           ),
@@ -768,7 +808,7 @@ void main() {
           textBaseline: TextBaseline.alphabetic,
           children: const [
             Text('A', key: Key('baseline-text')),
-            CLAnimatedNumber(42, key: _numberKey),
+            CLNumericText.number(42, key: _numberKey),
           ],
         ),
         textScaler: TextScaler.linear(1.5),
@@ -809,7 +849,7 @@ void main() {
         _boundary(
           ValueListenableBuilder<num>(
             valueListenable: value,
-            builder: (context, current, child) => CLAnimatedNumber(
+            builder: (context, current, child) => CLNumericText.number(
               current,
               key: _numberKey,
               alignment: Alignment.center,
@@ -834,7 +874,7 @@ void main() {
     await tester.pumpWidget(
       _host(
         _boundary(
-          const CLAnimatedNumber(
+          const CLNumericText.number(
             80,
             key: ValueKey('fresh-static-number'),
             alignment: Alignment.center,
@@ -847,6 +887,384 @@ void main() {
     final fresh = await _raster(tester);
     expect(
       _maxByteDifference(settled.bytes, fresh.bytes),
+      lessThanOrEqualTo(1),
+    );
+  });
+
+  testWidgets('a shared prefix and suffix hold while the middle changes', (
+    tester,
+  ) async {
+    final text = ValueNotifier<String>('AA-BB-CC');
+    addTearDown(text.dispose);
+    await tester.pumpWidget(
+      _host(
+        _boundary(
+          ValueListenableBuilder<String>(
+            valueListenable: text,
+            builder: (context, current, child) => CLNumericText(
+              current,
+              alignment: Alignment.centerLeft,
+              style: const TextStyle(fontSize: 20, height: 1.2),
+            ),
+          ),
+          width: 200,
+          height: 40,
+        ),
+      ),
+    );
+    final resting = await _raster(tester);
+
+    text.value = 'AA-XX-CC';
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 48));
+    final moving = await _raster(tester);
+
+    // `AA-` and `-CC` are the shared prefix and suffix; only the two graphemes
+    // between them may move. The gutters stop short of the changing pair so the
+    // neutral entrance's blur is not mistaken for instability.
+    expect(
+      _maxByteDifference(
+        _columnSlice(moving, 0, 52),
+        _columnSlice(resting, 0, 52),
+      ),
+      lessThanOrEqualTo(2),
+    );
+    expect(
+      _maxByteDifference(
+        _columnSlice(moving, 108, 160),
+        _columnSlice(resting, 108, 160),
+      ),
+      lessThanOrEqualTo(2),
+    );
+    expect(
+      _maxByteDifference(
+        _columnSlice(moving, 60, 100),
+        _columnSlice(resting, 60, 100),
+      ),
+      greaterThan(20),
+    );
+  });
+
+  testWidgets('a run flush with neither end survives the change', (
+    tester,
+  ) async {
+    final text = ValueNotifier<String>('1abc9');
+    addTearDown(text.dispose);
+    await tester.pumpWidget(
+      _host(
+        _boundary(
+          ValueListenableBuilder<String>(
+            valueListenable: text,
+            builder: (context, current, child) => CLNumericText(
+              current,
+              alignment: Alignment.centerLeft,
+              style: const TextStyle(fontSize: 20, height: 1.2),
+            ),
+          ),
+          width: 200,
+          height: 40,
+        ),
+      ),
+    );
+    final resting = await _raster(tester);
+
+    text.value = '2abc8';
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 48));
+    final moving = await _raster(tester);
+
+    // Neither end matches, so `abc` is only held by the middle run. Prefix and
+    // suffix matching alone would have cross-faded all five graphemes.
+    expect(
+      _maxByteDifference(
+        _columnSlice(moving, 22, 78),
+        _columnSlice(resting, 22, 78),
+      ),
+      lessThanOrEqualTo(2),
+    );
+    expect(
+      _maxByteDifference(
+        _columnSlice(moving, 0, 20),
+        _columnSlice(resting, 0, 20),
+      ),
+      greaterThan(20),
+    );
+    expect(
+      _maxByteDifference(
+        _columnSlice(moving, 80, 100),
+        _columnSlice(resting, 80, 100),
+      ),
+      greaterThan(20),
+    );
+  });
+
+  testWidgets('arbitrary text transitions and settles', (tester) async {
+    final text = ValueNotifier<String>('Off');
+    addTearDown(text.dispose);
+    await tester.pumpWidget(
+      _host(
+        ValueListenableBuilder<String>(
+          valueListenable: text,
+          builder: (context, current, child) =>
+              CLNumericText(current, key: _numberKey),
+        ),
+      ),
+    );
+
+    final initialWidth = tester.getSize(find.byKey(_numberKey)).width;
+    expect(find.bySemanticsLabel('Off'), findsOneWidget);
+
+    text.value = 'On';
+    await tester.pump();
+    expect(
+      tester.getSize(find.byKey(_numberKey)).width,
+      closeTo(initialWidth, 0.001),
+    );
+    expect(tester.binding.hasScheduledFrame, isTrue);
+    expect(find.bySemanticsLabel('On'), findsOneWidget);
+
+    await tester.pumpAndSettle();
+    expect(tester.takeException(), isNull);
+    expect(
+      tester.getSize(find.byKey(_numberKey)).width,
+      lessThan(initialWidth),
+    );
+    expect(tester.binding.hasScheduledFrame, isFalse);
+  });
+
+  testWidgets('entering graphemes are staggered along the line', (
+    tester,
+  ) async {
+    final text = ValueNotifier<String>('A');
+    addTearDown(text.dispose);
+    await tester.pumpWidget(
+      _host(
+        _boundary(
+          SizedBox(
+            width: 200,
+            height: 40,
+            child: ValueListenableBuilder<String>(
+              valueListenable: text,
+              builder: (context, current, child) => CLNumericText(
+                current,
+                alignment: Alignment.centerLeft,
+                style: const TextStyle(fontSize: 20, height: 1.2),
+              ),
+            ),
+          ),
+          width: 200,
+          height: 40,
+        ),
+      ),
+    );
+
+    text.value = 'ABCDEFGH';
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 48));
+    final early = await _raster(tester);
+
+    // Three stagger steps in, the head of the new run has begun to arrive and
+    // its tail has not been released yet.
+    expect(_alphaSum(early, 20, 80), greaterThan(0));
+    expect(_alphaSum(early, 100, 160), 0);
+
+    await tester.pumpAndSettle();
+    final settled = await _raster(tester);
+    expect(_alphaSum(settled, 100, 160), greaterThan(0));
+    expect(tester.binding.hasScheduledFrame, isFalse);
+  });
+
+  testWidgets('automatic trend rolls numbers and stays neutral for words', (
+    tester,
+  ) async {
+    final automaticNumber = await _textTransitionFrame(
+      tester,
+      from: '1',
+      to: '2',
+      trend: CLNumericTextTrend.automatic,
+    );
+    final risingNumber = await _textTransitionFrame(
+      tester,
+      from: '1',
+      to: '2',
+      trend: CLNumericTextTrend.increasing,
+    );
+
+    // A string a number can be read out of still has a direction, so automatic
+    // and the explicit trend render the same frame.
+    expect(automaticNumber, orderedEquals(risingNumber));
+
+    final automaticWord = await _textTransitionFrame(
+      tester,
+      from: 'Off',
+      to: 'On',
+      trend: CLNumericTextTrend.automatic,
+    );
+    final risingWord = await _textTransitionFrame(
+      tester,
+      from: 'Off',
+      to: 'On',
+      trend: CLNumericTextTrend.increasing,
+    );
+
+    // `Off` is neither larger nor smaller than `On`, so automatic declines to
+    // roll and the forced trend is visibly a different transition.
+    expect(automaticWord, isNot(orderedEquals(risingWord)));
+  });
+
+  testWidgets('the deprecated number-first spelling still transitions', (
+    tester,
+  ) async {
+    final value = ValueNotifier<num>(9);
+    addTearDown(value.dispose);
+    await tester.pumpWidget(
+      _host(
+        ValueListenableBuilder<num>(
+          valueListenable: value,
+          builder: (context, current, child) =>
+              // ignore: deprecated_member_use_from_same_package
+              CLAnimatedNumber(
+                current,
+                key: _numberKey,
+                formatter: (number) => '${number.toInt()}%',
+              ),
+        ),
+      ),
+    );
+
+    final initialWidth = tester.getSize(find.byKey(_numberKey)).width;
+    expect(find.bySemanticsLabel('9%'), findsOneWidget);
+
+    value.value = 1000;
+    await tester.pump();
+    expect(
+      tester.getSize(find.byKey(_numberKey)).width,
+      closeTo(initialWidth, 0.001),
+    );
+
+    await tester.pumpAndSettle();
+    expect(find.bySemanticsLabel('1000%'), findsOneWidget);
+    expect(
+      tester.getSize(find.byKey(_numberKey)).width,
+      greaterThan(initialWidth),
+    );
+  });
+
+  testWidgets('a grouped number rolls only the digit that changed', (
+    tester,
+  ) async {
+    final value = ValueNotifier<num>(1000);
+    addTearDown(value.dispose);
+    await tester.pumpWidget(
+      _host(
+        _boundary(
+          ValueListenableBuilder<num>(
+            valueListenable: value,
+            builder: (context, current, child) => CLNumericText.number(
+              current,
+              formatter: (number) =>
+                  '${number ~/ 1000},${(number % 1000).toInt().toString().padLeft(3, '0')}',
+              alignment: Alignment.centerLeft,
+              style: const TextStyle(fontSize: 20, height: 1.2),
+            ),
+          ),
+          width: 200,
+          height: 40,
+        ),
+      ),
+    );
+    final resting = await _raster(tester);
+
+    value.value = 1001;
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 48));
+    final moving = await _raster(tester);
+
+    // `1,00` is the shared prefix, and the units digit is the only column the
+    // place rule lets change. The separator in particular must not drift.
+    expect(
+      _maxByteDifference(
+        _columnSlice(moving, 0, 80),
+        _columnSlice(resting, 0, 80),
+      ),
+      lessThanOrEqualTo(2),
+    );
+    expect(
+      _maxByteDifference(
+        _columnSlice(moving, 80, 100),
+        _columnSlice(resting, 80, 100),
+      ),
+      greaterThan(20),
+    );
+  });
+
+  testWidgets('digits keep their decimal place as the number grows', (
+    tester,
+  ) async {
+    final value = ValueNotifier<num>(99);
+    addTearDown(value.dispose);
+    await tester.pumpWidget(
+      _host(
+        _boundary(
+          SizedBox(
+            width: 200,
+            height: 40,
+            child: ValueListenableBuilder<num>(
+              valueListenable: value,
+              builder: (context, current, child) => CLNumericText.number(
+                current,
+                alignment: Alignment.centerLeft,
+                style: const TextStyle(fontSize: 20, height: 1.2),
+              ),
+            ),
+          ),
+          width: 200,
+          height: 40,
+        ),
+      ),
+    );
+
+    final resting = await _raster(tester);
+
+    value.value = 999;
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 48));
+    final moving = await _raster(tester);
+
+    // Both old nines belong to the units and tens columns, so growing to three
+    // digits slides them one column right and brings the new digit into the
+    // hundreds column that opens up on the left. Pairing by position instead
+    // would have left the first two sitting still — so the leftmost column is
+    // exactly what must not be stable here.
+    expect(
+      _maxByteDifference(
+        _columnSlice(moving, 0, 20),
+        _columnSlice(resting, 0, 20),
+      ),
+      greaterThan(20),
+    );
+
+    await tester.pumpAndSettle();
+    final settled = await _raster(tester);
+    await tester.pumpWidget(
+      _host(
+        _boundary(
+          const SizedBox(
+            width: 200,
+            height: 40,
+            child: CLNumericText.number(
+              999,
+              alignment: Alignment.centerLeft,
+              style: TextStyle(fontSize: 20, height: 1.2),
+            ),
+          ),
+          width: 200,
+          height: 40,
+        ),
+      ),
+    );
+    expect(
+      _maxByteDifference(settled.bytes, (await _raster(tester)).bytes),
       lessThanOrEqualTo(1),
     );
   });

@@ -580,9 +580,7 @@ void main() {
         (CLProgressSize.medium, 24.0),
         (CLProgressSize.large, 40.0),
       ]) {
-        await tester.pumpWidget(
-          _host(CLProgressRing(value: 0.5, size: size)),
-        );
+        await tester.pumpWidget(_host(CLProgressRing(value: 0.5, size: size)));
         expect(
           tester.getSize(find.byType(CLProgressRing)),
           Size(box, box),

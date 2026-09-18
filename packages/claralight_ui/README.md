@@ -22,25 +22,35 @@ CLTheme(
 Widgets also work without an ancestor `CLTheme` by falling back to the
 default dark theme.
 
-## Animated numbers
+## Numeric text
 
-`CLAnimatedNumber` keeps unchanged digits and formatting decoration stable while
-changed digits roll in the value's direction. It inherits `DefaultTextStyle`,
-uses tabular figures by default, and snaps immediately when reduced motion is
-enabled:
+`CLNumericText` diffs one line of text against the last — a shared prefix, a
+shared suffix, and the longest run flush with neither end — so the graphemes
+that survive slide to their new place and only the ones that changed leave and
+enter. Two digits pair only when they share a decimal place, which is what keeps
+`1,000` to `1,001` down to a single rolling digit. It inherits
+`DefaultTextStyle`, uses tabular figures by default, and snaps immediately when
+reduced motion is enabled:
 
 ```dart
-CLAnimatedNumber(
+CLNumericText.number(
   score,
   formatter: (value) => '${value.toInt()}%',
   style: CLTheme.of(context).typography.monoStrong,
 )
+
+CLNumericText(isOn ? 'On' : 'Off')
 ```
 
-Use `trend: CLNumberTrend.decreasing` to override the inferred direction for a
-cyclic countdown. `alignment` anchors content inside the widget while its width
+`trend` describes a value getting larger or smaller. It is inferred from
+consecutive numbers; pass `trend: CLNumericTextTrend.decreasing` to override that
+for a cyclic countdown. Text no number can be read out of has no direction at
+all, and enters with a staggered fade, scale, and blur rather than an arbitrary
+vertical roll. `alignment` anchors content inside the widget while its width
 animates; place it in an end-aligned or fixed-width parent when the global
 trailing edge must not move.
+
+`CLAnimatedNumber` is the deprecated former spelling.
 
 ## Responsive overflow toolbars
 
@@ -195,7 +205,7 @@ Three free-for-commercial-use families ship with the package (see
 
 - **Theme** — `CLTheme`, `CLThemeData`, `CLColorScheme`, `CLTypography`,
   `CLRadii`, `CLSpacing`
-- **Foundation** — `CLAnimatedNumber` (interruptible numeric-text transition),
+- **Foundation** — `CLNumericText` (interruptible numeric-text transition),
   `CLMarqueeText`, `CLControlSize`, shape helpers
 - **Surfaces** — `CLSurface` (layered fills), `CLPressable` (springy press
   scale, jelly drag, pointer highlight)

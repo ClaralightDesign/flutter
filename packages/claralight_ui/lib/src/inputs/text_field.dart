@@ -7,7 +7,7 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/gestures.dart';
 import 'package:flutter/services.dart';
 
-import '../foundation/animated_number.dart';
+import '../foundation/numeric_text.dart';
 import '../foundation/control_size.dart';
 import '../foundation/shape.dart';
 import '../overlays/anchored_overlay.dart';
@@ -2134,7 +2134,7 @@ class _NumericScrubValueOverlay extends StatelessWidget {
             crossAxisAlignment: CrossAxisAlignment.baseline,
             textBaseline: TextBaseline.alphabetic,
             children: [
-              CLAnimatedNumber(
+              CLNumericText.number(
                 value,
                 formatter: (_) => formattedValue,
                 style: valueStyle,

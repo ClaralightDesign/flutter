@@ -147,13 +147,13 @@ void main() {
     expect(find.text('CLButton'), findsOneWidget);
     expect(find.text('CLToggle'), findsOneWidget);
     expect(find.text('CLSegmentedControl'), findsOneWidget);
-    expect(find.text('CLAnimatedNumber'), findsOneWidget);
+    expect(find.text('CLNumericText'), findsOneWidget);
     expect(find.text('CLDialog'), findsOneWidget);
     expect(find.text('CLMenu'), findsOneWidget);
     expect(find.byType(CLButton), findsWidgets);
     expect(find.byType(CLToggle), findsWidgets);
     expect(find.byType(CLSegmentedControl), findsWidgets);
-    expect(find.byType(CLAnimatedNumber), findsOneWidget);
+    expect(find.byType(CLNumericText), findsOneWidget);
     expect(find.byType(CLColorSwatchGroup), findsWidgets);
     expect(find.byType(CLProgressBar), findsWidgets);
     expect(find.byType(CLMenu), findsWidgets);
@@ -304,18 +304,18 @@ void main() {
     final number = find.byKey(const Key('animated-number-demo'));
     await tester.ensureVisible(number);
     await tester.pump();
-    expect(tester.widget<CLAnimatedNumber>(number).value, 123450);
+    expect(tester.widget<CLNumericText>(number).value, 123450);
     expect(find.bySemanticsLabel(r'$1,234.50'), findsOneWidget);
 
     await tester.tap(find.byKey(const Key('animated-number-increment')));
     await tester.pump();
-    expect(tester.widget<CLAnimatedNumber>(number).value, 124649);
+    expect(tester.widget<CLNumericText>(number).value, 124649);
     expect(find.bySemanticsLabel(r'$1,246.49'), findsOneWidget);
 
     await tester.pump(const Duration(milliseconds: 80));
     await tester.tap(find.byKey(const Key('animated-number-cycle')));
     await tester.pump();
-    expect(tester.widget<CLAnimatedNumber>(number).value, 99999900);
+    expect(tester.widget<CLNumericText>(number).value, 99999900);
     expect(find.bySemanticsLabel(r'$999,999.00'), findsOneWidget);
     await tester.pump(const Duration(milliseconds: 700));
     semantics.dispose();

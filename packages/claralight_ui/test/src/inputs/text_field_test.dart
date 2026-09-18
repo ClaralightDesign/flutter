@@ -533,54 +533,55 @@ void main() {
     );
   });
 
-  testWidgets('readOnly and disabled keep the stepper layout and render it inert', (
-    tester,
-  ) async {
-    final controller = TextEditingController(text: '4');
-    final focusNode = FocusNode();
-    addTearDown(controller.dispose);
-    addTearDown(focusNode.dispose);
+  testWidgets(
+    'readOnly and disabled keep the stepper layout and render it inert',
+    (tester) async {
+      final controller = TextEditingController(text: '4');
+      final focusNode = FocusNode();
+      addTearDown(controller.dispose);
+      addTearDown(focusNode.dispose);
 
-    Widget build({required bool enabled, required bool readOnly}) => host(
-      CLTextField(
-        controller: controller,
-        focusNode: focusNode,
-        keyboardType: const TextInputType.numberWithOptions(signed: false),
-        prefix: const Text('W'),
-        enabled: enabled,
-        readOnly: readOnly,
-        step: 1,
-        min: 0,
-        max: 10,
-        size: CLControlSize.small,
-      ),
-    );
+      Widget build({required bool enabled, required bool readOnly}) => host(
+        CLTextField(
+          controller: controller,
+          focusNode: focusNode,
+          keyboardType: const TextInputType.numberWithOptions(signed: false),
+          prefix: const Text('W'),
+          enabled: enabled,
+          readOnly: readOnly,
+          step: 1,
+          min: 0,
+          max: 10,
+          size: CLControlSize.small,
+        ),
+      );
 
-    await tester.pumpWidget(build(enabled: true, readOnly: false));
-    await tester.pumpAndSettle();
-    final base = tester.getSize(find.byType(CLTextField));
-    expect(stepUp, findsOneWidget);
+      await tester.pumpWidget(build(enabled: true, readOnly: false));
+      await tester.pumpAndSettle();
+      final base = tester.getSize(find.byType(CLTextField));
+      expect(stepUp, findsOneWidget);
 
-    // readOnly keeps the arrows and the geometry, but cannot step.
-    await tester.pumpWidget(build(enabled: true, readOnly: true));
-    await tester.pumpAndSettle();
-    expect(stepUp, findsOneWidget);
-    expect(tester.getSize(find.byType(CLTextField)), base);
-    await tester.tap(stepUp);
-    await tester.pump();
-    expect(controller.text, '4');
-    focusNode.requestFocus();
-    await tester.pump();
-    await tester.sendKeyEvent(LogicalKeyboardKey.arrowUp);
-    await tester.pump();
-    expect(controller.text, '4');
+      // readOnly keeps the arrows and the geometry, but cannot step.
+      await tester.pumpWidget(build(enabled: true, readOnly: true));
+      await tester.pumpAndSettle();
+      expect(stepUp, findsOneWidget);
+      expect(tester.getSize(find.byType(CLTextField)), base);
+      await tester.tap(stepUp);
+      await tester.pump();
+      expect(controller.text, '4');
+      focusNode.requestFocus();
+      await tester.pump();
+      await tester.sendKeyEvent(LogicalKeyboardKey.arrowUp);
+      await tester.pump();
+      expect(controller.text, '4');
 
-    // disabled keeps the arrows and the geometry, and grays out.
-    await tester.pumpWidget(build(enabled: false, readOnly: false));
-    await tester.pumpAndSettle();
-    expect(stepUp, findsOneWidget);
-    expect(tester.getSize(find.byType(CLTextField)), base);
-  });
+      // disabled keeps the arrows and the geometry, and grays out.
+      await tester.pumpWidget(build(enabled: false, readOnly: false));
+      await tester.pumpAndSettle();
+      expect(stepUp, findsOneWidget);
+      expect(tester.getSize(find.byType(CLTextField)), base);
+    },
+  );
 
   testWidgets('disabled state leaves its fill to the Claralight surface', (
     tester,
@@ -894,7 +895,7 @@ void main() {
     expect(controller.text, '10');
     expect(scrubRuler, findsOneWidget);
     expect(scrubOverlay, findsOneWidget);
-    expect(find.byType(CLAnimatedNumber), findsOneWidget);
+    expect(find.byType(CLNumericText), findsOneWidget);
     expect(
       find.descendant(of: scrubOverlay, matching: find.text('px')),
       findsOneWidget,
@@ -2079,9 +2080,7 @@ void main() {
     await tester.pump();
     await tester.pump();
 
-    final number = tester.widget<CLAnimatedNumber>(
-      find.byType(CLAnimatedNumber),
-    );
+    final number = tester.widget<CLNumericText>(find.byType(CLNumericText));
     expect(number.formatter!(1), '1.00');
     expect(find.byKey(suffixKey), findsOneWidget);
     expect(
@@ -2209,9 +2208,7 @@ void main() {
     await tester.pump();
     await tester.pump();
 
-    final number = tester.widget<CLAnimatedNumber>(
-      find.byType(CLAnimatedNumber),
-    );
+    final number = tester.widget<CLNumericText>(find.byType(CLNumericText));
     final suffix = find.descendant(of: scrubOverlay, matching: find.text('px'));
 
     expect(number.style?.color, theme.colors.textPrimary);
@@ -2271,130 +2268,131 @@ void main() {
     await mouse.up();
   });
 
-  testWidgets('wheel steps only while focused, preserves focus, and filters signals', (
-    tester,
-  ) async {
-    final controller = TextEditingController(text: '4');
-    final focusNode = FocusNode();
-    final commits = <String>[];
-    addTearDown(controller.dispose);
-    addTearDown(focusNode.dispose);
+  testWidgets(
+    'wheel steps only while focused, preserves focus, and filters signals',
+    (tester) async {
+      final controller = TextEditingController(text: '4');
+      final focusNode = FocusNode();
+      final commits = <String>[];
+      addTearDown(controller.dispose);
+      addTearDown(focusNode.dispose);
 
-    await tester.pumpWidget(
-      host(
-        CLTextField(
-          controller: controller,
-          focusNode: focusNode,
-          keyboardType: TextInputType.number,
-          step: 2,
-          min: 0,
-          max: 10,
-          onCommit: commits.add,
+      await tester.pumpWidget(
+        host(
+          CLTextField(
+            controller: controller,
+            focusNode: focusNode,
+            keyboardType: TextInputType.number,
+            step: 2,
+            min: 0,
+            max: 10,
+            onCommit: commits.add,
+          ),
         ),
-      ),
-    );
+      );
 
-    final position = tester.getCenter(find.byType(CLTextField));
-    bool? allowedPlatformDefault;
-    await tester.sendEventToBinding(
-      PointerScrollEvent(
-        kind: PointerDeviceKind.mouse,
-        position: position,
-        scrollDelta: const Offset(0, -120),
-        onRespond: ({required allowPlatformDefault}) {
-          allowedPlatformDefault = allowPlatformDefault;
-        },
-      ),
-    );
-    await tester.pump();
-    expect(controller.text, '4');
-    expect(focusNode.hasFocus, isFalse);
-    expect(allowedPlatformDefault, isTrue);
-    expect(commits, isEmpty);
+      final position = tester.getCenter(find.byType(CLTextField));
+      bool? allowedPlatformDefault;
+      await tester.sendEventToBinding(
+        PointerScrollEvent(
+          kind: PointerDeviceKind.mouse,
+          position: position,
+          scrollDelta: const Offset(0, -120),
+          onRespond: ({required allowPlatformDefault}) {
+            allowedPlatformDefault = allowPlatformDefault;
+          },
+        ),
+      );
+      await tester.pump();
+      expect(controller.text, '4');
+      expect(focusNode.hasFocus, isFalse);
+      expect(allowedPlatformDefault, isTrue);
+      expect(commits, isEmpty);
 
-    focusNode.requestFocus();
-    await tester.pump();
-    expect(focusNode.hasFocus, isTrue);
-    await tester.sendEventToBinding(
-      PointerScrollEvent(
-        kind: PointerDeviceKind.mouse,
-        position: position,
-        scrollDelta: const Offset(0, -120),
-        onRespond: ({required allowPlatformDefault}) {
-          allowedPlatformDefault = allowPlatformDefault;
-        },
-      ),
-    );
-    await tester.pump();
-    expect(controller.text, '6');
-    expect(focusNode.hasFocus, isTrue);
-    expect(allowedPlatformDefault, isFalse);
-    expect(commits, isEmpty);
-    await tester.pump(const Duration(milliseconds: 119));
-    expect(commits, isEmpty);
-    await tester.pump(const Duration(milliseconds: 1));
-    expect(commits, ['6']);
+      focusNode.requestFocus();
+      await tester.pump();
+      expect(focusNode.hasFocus, isTrue);
+      await tester.sendEventToBinding(
+        PointerScrollEvent(
+          kind: PointerDeviceKind.mouse,
+          position: position,
+          scrollDelta: const Offset(0, -120),
+          onRespond: ({required allowPlatformDefault}) {
+            allowedPlatformDefault = allowPlatformDefault;
+          },
+        ),
+      );
+      await tester.pump();
+      expect(controller.text, '6');
+      expect(focusNode.hasFocus, isTrue);
+      expect(allowedPlatformDefault, isFalse);
+      expect(commits, isEmpty);
+      await tester.pump(const Duration(milliseconds: 119));
+      expect(commits, isEmpty);
+      await tester.pump(const Duration(milliseconds: 1));
+      expect(commits, ['6']);
 
-    await tester.sendEventToBinding(
-      PointerScrollEvent(
-        kind: PointerDeviceKind.mouse,
-        position: position,
-        scrollDelta: const Offset(30, -10),
-      ),
-    );
-    await tester.sendEventToBinding(
-      PointerScrollEvent(
-        kind: PointerDeviceKind.trackpad,
-        position: position,
-        scrollDelta: const Offset(0, -20),
-      ),
-    );
-    await tester.pump();
-    expect(controller.text, '6');
+      await tester.sendEventToBinding(
+        PointerScrollEvent(
+          kind: PointerDeviceKind.mouse,
+          position: position,
+          scrollDelta: const Offset(30, -10),
+        ),
+      );
+      await tester.sendEventToBinding(
+        PointerScrollEvent(
+          kind: PointerDeviceKind.trackpad,
+          position: position,
+          scrollDelta: const Offset(0, -20),
+        ),
+      );
+      await tester.pump();
+      expect(controller.text, '6');
 
-    await tester.sendKeyDownEvent(LogicalKeyboardKey.shiftLeft);
-    await tester.sendEventToBinding(
-      PointerScrollEvent(
-        kind: PointerDeviceKind.mouse,
-        position: position,
-        scrollDelta: const Offset(0, -20),
-      ),
-    );
-    await tester.sendKeyUpEvent(LogicalKeyboardKey.shiftLeft);
-    await tester.pump();
-    expect(controller.text, '6');
+      await tester.sendKeyDownEvent(LogicalKeyboardKey.shiftLeft);
+      await tester.sendEventToBinding(
+        PointerScrollEvent(
+          kind: PointerDeviceKind.mouse,
+          position: position,
+          scrollDelta: const Offset(0, -20),
+        ),
+      );
+      await tester.sendKeyUpEvent(LogicalKeyboardKey.shiftLeft);
+      await tester.pump();
+      expect(controller.text, '6');
 
-    focusNode.unfocus();
-    await tester.pump();
-    await tester.sendEventToBinding(
-      PointerScrollEvent(
-        kind: PointerDeviceKind.mouse,
-        position: position,
-        scrollDelta: const Offset(0, -20),
-      ),
-    );
-    await tester.pump();
-    expect(controller.text, '6');
+      focusNode.unfocus();
+      await tester.pump();
+      await tester.sendEventToBinding(
+        PointerScrollEvent(
+          kind: PointerDeviceKind.mouse,
+          position: position,
+          scrollDelta: const Offset(0, -20),
+        ),
+      );
+      await tester.pump();
+      expect(controller.text, '6');
 
-    focusNode.requestFocus();
-    await tester.pump();
-    controller.text = '10';
-    await tester.pump();
-    var respondedAtBoundary = false;
-    await tester.sendEventToBinding(
-      PointerScrollEvent(
-        kind: PointerDeviceKind.mouse,
-        position: position,
-        scrollDelta: const Offset(0, -20),
-        onRespond: ({required allowPlatformDefault}) {
-          respondedAtBoundary = true;
-        },
-      ),
-    );
-    await tester.pump();
-    expect(controller.text, '10');
-    expect(respondedAtBoundary, isTrue);
-  });
+      focusNode.requestFocus();
+      await tester.pump();
+      controller.text = '10';
+      await tester.pump();
+      var respondedAtBoundary = false;
+      await tester.sendEventToBinding(
+        PointerScrollEvent(
+          kind: PointerDeviceKind.mouse,
+          position: position,
+          scrollDelta: const Offset(0, -20),
+          onRespond: ({required allowPlatformDefault}) {
+            respondedAtBoundary = true;
+          },
+        ),
+      );
+      await tester.pump();
+      expect(controller.text, '10');
+      expect(respondedAtBoundary, isTrue);
+    },
+  );
 
   testWidgets('wheel yields to an ancestor scroller at a numeric bound', (
     tester,
@@ -2707,8 +2705,11 @@ void main() {
       await tester.pump();
 
       expect(tester.testTextInput.hasAnyClients, isTrue);
-      expect(tester.testTextInput.isVisible, isTrue,
-          reason: 'tapping the field must re-attach the soft keyboard');
+      expect(
+        tester.testTextInput.isVisible,
+        isTrue,
+        reason: 'tapping the field must re-attach the soft keyboard',
+      );
     },
   );
 
@@ -2727,19 +2728,22 @@ void main() {
       ),
     );
 
-      final field = find.byType(CLTextField);
-      await tester.tap(field);
-      await tester.pump();
-      await tester.enterText(field, '-');
-      await tester.pump();
+    final field = find.byType(CLTextField);
+    await tester.tap(field);
+    await tester.pump();
+    await tester.enterText(field, '-');
+    await tester.pump();
 
-      // Submitting an incomplete number closes the connection (Done action);
-      // the field must bring the IME right back so the user can finish it.
-      await tester.testTextInput.receiveAction(TextInputAction.done);
-      await tester.pump();
+    // Submitting an incomplete number closes the connection (Done action);
+    // the field must bring the IME right back so the user can finish it.
+    await tester.testTextInput.receiveAction(TextInputAction.done);
+    await tester.pump();
 
-      expect(tester.testTextInput.hasAnyClients, isTrue);
-      expect(tester.testTextInput.isVisible, isTrue,
-          reason: 'invalid submission must keep the keyboard available');
+    expect(tester.testTextInput.hasAnyClients, isTrue);
+    expect(
+      tester.testTextInput.isVisible,
+      isTrue,
+      reason: 'invalid submission must keep the keyboard available',
+    );
   });
 }

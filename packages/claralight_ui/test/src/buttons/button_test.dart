@@ -180,7 +180,7 @@ void main() {
     await tester.pumpWidget(
       host(
         CLButton(
-          labelWidget: CLAnimatedNumber(
+          labelWidget: CLNumericText.number(
             363,
             key: const ValueKey('inline-number'),
             formatter: (value) => '${value.round()}%',

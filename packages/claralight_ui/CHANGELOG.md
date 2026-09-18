@@ -11,10 +11,17 @@
 * Smoothed every anchored overlay tail into one four-direction, G2-continuous
   profile shared by tooltips, popovers, and numeric scrub value overlays.
 
-* Added `CLAnimatedNumber`, an interruptible SwiftUI-style numeric-text
-  transition with changed-digit rolling, stable formatting decoration,
-  animated intrinsic width, spring velocity handoff, velocity-driven vertical
-  motion blur, reduced-motion snapping, and single-value semantics.
+* Added `CLNumericText`, an interruptible SwiftUI-style numeric-text
+  transition over arbitrary single-line text. Changed content is matched with a
+  diff — a shared prefix, a shared suffix, and the longest run flush with
+  neither end — under the rule that two digits pair only when they share a
+  decimal place, so surviving graphemes slide and only the changed ones leave
+  and enter. Departures and arrivals are staggered along the line; digits roll
+  in the value's direction with velocity-driven vertical motion blur, and
+  content no number can be read out of enters neutrally with scale and blur
+  instead. Includes animated intrinsic width, spring velocity handoff,
+  reduced-motion snapping, and single-value semantics. `CLAnimatedNumber` and
+  `CLNumberTrend` remain as deprecated aliases.
 
 * Numeric `CLTextField` steppers now support vertical scrubbing from the
   trailing arrow strip, mouse-wheel and Up/Down adjustment, press-and-hold
