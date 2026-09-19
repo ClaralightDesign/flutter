@@ -255,6 +255,7 @@ class _SliderSectionState extends State<_SliderSection> {
             min: -1,
             max: 1,
             snapPoints: const [-1, 0, 1],
+            snapRadius: 24,
             onChanged: (v) => setState(() => _balance = v),
             valueLabel: (v) => v == 0
                 ? '居中'

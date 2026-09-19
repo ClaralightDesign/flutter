@@ -4,6 +4,7 @@ import 'dart:math' as math;
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 void main() {
@@ -719,12 +720,16 @@ const double _snapX = 0.5 * _usable;
 
 double _localX(double pointer) => pointer + CLSlider.pressLineWidth / 2;
 
-Widget _snappingSlider(void Function(double) record) => MaterialApp(
+Widget _snappingSlider(
+  void Function(double) record, {
+  double snapRadius = CLSlider.defaultSnapRadius,
+}) => MaterialApp(
   home: Center(
     child: SizedBox(
       width: 300,
       child: StatefulBuilder(
-        builder: (context, setState) => _SnapHarness(record: record),
+        builder: (context, setState) =>
+            _SnapHarness(record: record, snapRadius: snapRadius),
       ),
     ),
   ),
@@ -732,8 +737,9 @@ Widget _snappingSlider(void Function(double) record) => MaterialApp(
 
 class _SnapHarness extends StatefulWidget {
   final void Function(double) record;
+  final double snapRadius;
 
-  const _SnapHarness({required this.record});
+  const _SnapHarness({required this.record, required this.snapRadius});
 
   @override
   State<_SnapHarness> createState() => _SnapHarnessState();
@@ -746,6 +752,7 @@ class _SnapHarnessState extends State<_SnapHarness> {
   Widget build(BuildContext context) => CLSlider(
     value: _value,
     snapPoints: const [0.5],
+    snapRadius: widget.snapRadius,
     onChanged: (value) {
       widget.record(value);
       setState(() => _value = value);
@@ -768,8 +775,9 @@ void _sliderSnapTests() {
     await gesture.up();
     await tester.pumpAndSettle();
 
-    // Three pixels past it: near enough that the bend is under half a pixel,
-    // so the value is still the point itself rather than a hair beside it.
+    // Three pixels past it, well inside the seven-pixel hold the default
+    // radius gives, so the value is still the point itself rather than a hair
+    // beside it.
     reported.clear();
     gesture = await tester.startGesture(
       rail + Offset(_localX(_snapX + 3), CLSlider.hitHeight / 2),
@@ -789,10 +797,16 @@ void _sliderSnapTests() {
     // maps straight through — this is what keeps the value continuous.
     var gesture = await tester.startGesture(
       rail +
-          Offset(_localX(_snapX + CLSlider.snapRadius), CLSlider.hitHeight / 2),
+          Offset(
+            _localX(_snapX + CLSlider.defaultSnapRadius),
+            CLSlider.hitHeight / 2,
+          ),
     );
     await tester.pump();
-    expect(reported.last, closeTo((_snapX + CLSlider.snapRadius) / _usable, 1e-9));
+    expect(
+      reported.last,
+      closeTo((_snapX + CLSlider.defaultSnapRadius) / _usable, 1e-9),
+    );
     await gesture.up();
     await tester.pumpAndSettle();
 
@@ -803,6 +817,89 @@ void _sliderSnapTests() {
     );
     await tester.pump();
     expect(reported.last, closeTo((_snapX + 40) / _usable, 1e-9));
+    await gesture.up();
+    await tester.pumpAndSettle();
+  });
+
+  testWidgets('a wider snapRadius holds from further out', (tester) async {
+    final reported = <double>[];
+    await tester.pumpWidget(_snappingSlider(reported.add, snapRadius: 40));
+    final rail = tester.getTopLeft(find.byType(CLSlider));
+
+    // Standing where the default magnet has already let go. A radius of 40
+    // holds over its first 20, so what comes back is the point itself.
+    var gesture = await tester.startGesture(
+      rail +
+          Offset(
+            _localX(_snapX + CLSlider.defaultSnapRadius),
+            CLSlider.hitHeight / 2,
+          ),
+    );
+    await tester.pump();
+    expect(reported.last, 0.5);
+    await gesture.up();
+    await tester.pumpAndSettle();
+
+    // Half way along the ramp, where the swallowed travel is being handed back
+    // at twice the pointer's pace: ten pixels past the hold buys twenty.
+    reported.clear();
+    gesture = await tester.startGesture(
+      rail + Offset(_localX(_snapX + 30), CLSlider.hitHeight / 2),
+    );
+    await tester.pump();
+    expect(reported.last, closeTo((_snapX + 20) / _usable, 1e-9));
+    await gesture.up();
+    await tester.pumpAndSettle();
+  });
+
+  testWidgets('a hold ticks once catching and once letting go', (tester) async {
+    final ticks = <Object?>[];
+    final messenger = tester.binding.defaultBinaryMessenger;
+    messenger.setMockMethodCallHandler(SystemChannels.platform, (call) async {
+      if (call.method == 'HapticFeedback.vibrate') ticks.add(call.arguments);
+      return null;
+    });
+    addTearDown(
+      () => messenger.setMockMethodCallHandler(SystemChannels.platform, null),
+    );
+
+    final reported = <double>[];
+    await tester.pumpWidget(_snappingSlider(reported.add));
+    final rail = tester.getTopLeft(find.byType(CLSlider));
+
+    // A mouse, whose slop is a single pixel, so the moves below are not spent
+    // winning the gesture arena.
+    final gesture = await tester.startGesture(
+      rail + Offset(_localX(_snapX - 40), CLSlider.hitHeight / 2),
+      kind: PointerDeviceKind.mouse,
+    );
+    await gesture.moveBy(const Offset(4, 0));
+    await tester.pump();
+    expect(ticks, isEmpty);
+
+    // Caught.
+    await gesture.moveTo(
+      rail + Offset(_localX(_snapX), CLSlider.hitHeight / 2),
+    );
+    await tester.pump();
+    expect(ticks, hasLength(1));
+
+    // Still in there. The hold is seven pixels wide at the default radius and
+    // wandering about inside it is not a second catch.
+    await gesture.moveTo(
+      rail + Offset(_localX(_snapX + 5), CLSlider.hitHeight / 2),
+    );
+    await tester.pump();
+    expect(ticks, hasLength(1));
+
+    // Free.
+    await gesture.moveTo(
+      rail + Offset(_localX(_snapX + 40), CLSlider.hitHeight / 2),
+    );
+    await tester.pump();
+    expect(ticks, hasLength(2));
+    expect(ticks, everyElement('HapticFeedbackType.selectionClick'));
+
     await gesture.up();
     await tester.pumpAndSettle();
   });
@@ -837,8 +934,9 @@ void _sliderSnapTests() {
     expect(values.last, greaterThan(0.5));
 
     // A dead zone that pinned the value would let go of it with a jump the
-    // width of the radius. The bend has no jump anywhere: a pixel of pointer
-    // never buys more than the exponent's worth of rail.
+    // width of the hold. This one hands that travel back instead: a pixel of
+    // pointer never buys more than the ramp's double pace, plus the half pixel
+    // the exact-value epsilon rounds away.
     for (var index = 1; index < values.length; index++) {
       final step = (values[index] - values[index - 1]) * _usable;
       expect(step, greaterThanOrEqualTo(-1e-9));

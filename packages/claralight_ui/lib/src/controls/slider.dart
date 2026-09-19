@@ -30,7 +30,8 @@ import '../theme/theme.dart';
 ///
 /// [snapPoints] give the rail places the handle is drawn to. The pull is soft:
 /// no value is ever out of reach, the handle only grows heavy over a point and
-/// breaks free once the pointer has pushed far enough past it. [step] is the
+/// breaks free once the pointer has pushed far enough past it — [snapRadius] is
+/// how far that is, and so how strong the magnet feels. [step] is the
 /// hard version of the same idea — a grid the handle springs between, with
 /// nothing in the gaps — and the two are alternatives, not layers.
 class CLSlider extends StatefulWidget {
@@ -54,6 +55,19 @@ class CLSlider extends StatefulWidget {
   /// cross than the rail around it does.
   final List<double>? snapPoints;
 
+  /// How near a [snapPoints] entry the pointer must come for that point to take
+  /// hold of it, in logical pixels. This is the magnet's whole strength: it
+  /// sets both how far out the pull reaches and, in proportion, how much travel
+  /// it costs to break free of a point once caught.
+  ///
+  /// Past [defaultSnapRadius] the magnet is bought with the handle's place
+  /// under the cursor. The handle stands still on the point while the pointer
+  /// crosses the hold, which is [_snapHoldShare] of the radius, so a radius
+  /// well past half [hoverWidth] ends a drag with the handle visibly behind the
+  /// pointer that was pulling it — worth paying on a slider whose points matter
+  /// more than its in-between values, and not on one where they do not.
+  final double snapRadius;
+
   /// The spacing of a grid the handle may only come to rest on, in the
   /// slider's own units. Null is the continuous rail, which is the default.
   ///
@@ -75,9 +89,11 @@ class CLSlider extends StatefulWidget {
     this.activeColor,
     this.valueLabel,
     this.snapPoints,
+    this.snapRadius = defaultSnapRadius,
     this.step,
   }) : assert(min < max),
        assert(step == null || step > 0),
+       assert(snapRadius > 0),
        assert(
          step == null || snapPoints == null,
          'A grid and a set of magnets are two ways to answer the same '
@@ -113,16 +129,17 @@ class CLSlider extends StatefulWidget {
 
   static const double hitHeight = 32;
 
-  /// How near a [snapPoints] entry the pointer must come for the point to take
-  /// hold of it. Kept under half [hoverWidth] so that the handle, which lags
-  /// the pointer by at most [_snapExponent]'s share of this distance, is still
-  /// under the cursor when the drag ends.
-  static const double snapRadius = 14;
+  /// The magnet [snapPoints] gets when [CLSlider.snapRadius] is left alone: half
+  /// [hoverWidth], so that the handle, which lags the pointer by at most the
+  /// hold's share of the radius, is still under the cursor when the drag ends.
+  static const double defaultSnapRadius = 14;
 
-  /// How sharply the pull falls off across [snapRadius]. Above 1 the pointer
-  /// stalls dead on the point and recovers full speed by the radius, which is
-  /// what keeps the value continuous where a pinned dead zone would jump.
-  static const double _snapExponent = 3;
+  /// The share of [CLSlider.snapRadius], measured out from a point, over which
+  /// the value is that point exactly — the hold. The rest of the radius is the
+  /// ramp that hands the held travel back, so the value runs
+  /// `1 / (1 - _snapHoldShare)` times as fast as the finger there and is the
+  /// finger's own again at the radius.
+  static const double _snapHoldShare = 0.5;
 
   /// The bubble's own padding, and the tail it points at the handle with — the
   /// tooltip's tail, cut small.
@@ -223,10 +240,12 @@ class _CLSliderState extends State<CLSlider> with TickerProviderStateMixin {
   bool _tracking = false;
   bool _disableAnimations = false;
 
-  /// Where the pointer was at the previous [_update], so a snap point can be
-  /// caught being crossed. Cleared with the press, so the next drag does not
-  /// open with a tick for ground it never covered.
-  double? _snapTickX;
+  /// The snap point whose hold the pointer is standing in. Null both for a
+  /// pointer out in the open and for a drag that has taken no sample yet;
+  /// [_snapHoldSampled] tells those apart, so a drag opening inside a hold does
+  /// not tick for ground it never crossed.
+  double? _heldSnap;
+  bool _snapHoldSampled = false;
 
   /// The stop the grid last delivered, so arriving at the next one can tick.
   double? _stepTickValue;
@@ -381,14 +400,8 @@ class _CLSliderState extends State<CLSlider> with TickerProviderStateMixin {
     ];
   }
 
-  /// The pointer, pulled toward whichever snap point it is passing.
-  ///
-  /// Not a dead zone that pins the value and lets go of it with a jump: the
-  /// pointer's own coordinate is bent — slowly near the point, at full speed
-  /// again by the edge of the radius — so the value stays continuous the whole
-  /// way across and the handle merely drags its feet and then breaks free.
-  double _magnetize(double x, List<double> snaps) {
-    if (snaps.isEmpty) return x;
+  /// Whichever of [snaps] the pointer at [x] stands nearest.
+  double _nearestSnap(double x, List<double> snaps) {
     var nearest = snaps.first;
     var distance = (x - nearest).abs();
     for (final snap in snaps) {
@@ -398,11 +411,28 @@ class _CLSliderState extends State<CLSlider> with TickerProviderStateMixin {
         nearest = snap;
       }
     }
-    if (distance >= CLSlider.snapRadius) return x;
+    return nearest;
+  }
+
+  /// The pointer, pulled toward whichever snap point it is passing.
+  ///
+  /// A detent rather than a dead zone with a cliff at its edge. Inside the hold
+  /// the value is the point itself, however far into the hold the pointer has
+  /// wandered; the travel the hold swallows is handed back over the rest of the
+  /// radius, so the pointer has its own coordinate again by the time it leaves
+  /// and the value never jumps. Nothing in between goes out of reach either —
+  /// the ramp covers every offset the hold skipped, and only asks for a finer
+  /// hand near a point to do it.
+  double _magnetize(double x, List<double> snaps) {
+    if (snaps.isEmpty) return x;
+    final nearest = _nearestSnap(x, snaps);
+    final distance = (x - nearest).abs();
+    final radius = widget.snapRadius;
+    if (distance >= radius) return x;
+    final hold = radius * CLSlider._snapHoldShare;
+    if (distance <= hold) return nearest;
     final offset =
-        CLSlider.snapRadius *
-        math.pow(distance / CLSlider.snapRadius, CLSlider._snapExponent) *
-        (x < nearest ? -1 : 1);
+        radius * (distance - hold) / (radius - hold) * (x < nearest ? -1 : 1);
     // Near enough that the gap is under half a pixel: report the point itself,
     // so a snap point yields the exact number rather than a fraction of a
     // pixel beside it and a value label reading 49.99998%.
@@ -418,27 +448,33 @@ class _CLSliderState extends State<CLSlider> with TickerProviderStateMixin {
     unawaited(clSelectionHaptic());
   }
 
-  /// A tick as the handle crosses a snap point. What crosses is the pointer
-  /// rather than the bent value, so the tick arrives under the finger.
+  /// A tick as a point takes hold of the pointer, and another as it lets go.
+  ///
+  /// What is timed is the pointer entering and leaving the hold, not the value
+  /// changing, so both arrive under the finger: one for catching, one for
+  /// breaking free, which is what a detent gives a hand crossing it.
   void _tickOverSnapPoints(double x, List<double> snaps) {
-    final previous = _snapTickX;
-    _snapTickX = x;
-    if (previous == null || !_tracking || snaps.isEmpty) return;
-    final low = math.min(previous, x);
-    final high = math.max(previous, x);
-    for (final snap in snaps) {
-      if (snap > low && snap <= high) {
-        unawaited(clSelectionHaptic());
-        return;
-      }
-    }
+    final previous = _heldSnap;
+    final sampled = _snapHoldSampled;
+    final nearest = snaps.isEmpty ? null : _nearestSnap(x, snaps);
+    final held =
+        nearest != null &&
+            (x - nearest).abs() <= widget.snapRadius * CLSlider._snapHoldShare
+        ? nearest
+        : null;
+    _heldSnap = held;
+    _snapHoldSampled = true;
+    // A drag that opens inside a hold has not crossed into it.
+    if (!sampled || !_tracking || held == previous) return;
+    unawaited(clSelectionHaptic());
   }
 
   void _setPressed(bool pressed, {bool tracking = false}) {
     _tracking = pressed && tracking;
     _pressed = pressed;
     if (!pressed) {
-      _snapTickX = null;
+      _heldSnap = null;
+      _snapHoldSampled = false;
       _stepTickValue = null;
     }
     _syncOverlay();
