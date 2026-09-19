@@ -150,6 +150,8 @@ class _CLSliderState extends State<CLSlider> with TickerProviderStateMixin {
     damping: 18,
   );
 
+  /// The spring the handle crosses open rail on, where the distance it has to
+  /// cover is an error to be corrected rather than a place to go.
   static SpringDescription _visualSpringFor(double distance) {
     final dampingProgress = (distance / 0.35).clamp(0.0, 1.0);
     return SpringDescription(
@@ -160,6 +162,22 @@ class _CLSliderState extends State<CLSlider> with TickerProviderStateMixin {
       damping: 24 + 24 * dampingProgress,
     );
   }
+
+  /// The spring a hop between two stops on [CLSlider.step]'s grid travels on.
+  ///
+  /// One description for every hop, and deliberately not [_visualSpringFor]'s
+  /// curve. A linear spring already crosses any distance in the same time, so
+  /// holding the damping still is what makes every stop arrive alike. Reading
+  /// it off the distance instead would hand the feel of a hop to how far the
+  /// handle happened to have got when the next stop came up — landing softly
+  /// out of a slow drag and springing out of a quick one, on the same grid.
+  static const _gridSpring = SpringDescription(
+    mass: 1,
+    stiffness: 520,
+    // A little over two thirds of critical damping: roughly 120ms to the stop
+    // with a few percent of overshoot, which is the detent catching.
+    damping: 32,
+  );
 
   late final AnimationController _press;
   late final AnimationController _hover;
@@ -260,10 +278,13 @@ class _CLSliderState extends State<CLSlider> with TickerProviderStateMixin {
       final distance = (target - _visual.value).abs();
       _visual.animateWith(
         SpringSimulation(
-          _visualSpringFor(distance),
+          widget.step == null ? _visualSpringFor(distance) : _gridSpring,
           _visual.value,
           target,
-          0,
+          // A hop that starts while the last one is still in the air keeps the
+          // speed it already had. Beginning each from rest breaks a quick drag
+          // across the grid into a row of separate little journeys.
+          _visual.velocity,
           tolerance: Tolerance.defaultTolerance,
         ),
       );

@@ -81,7 +81,10 @@ class _CLSegmentedControlState extends State<CLSegmentedControl>
           _spring,
           _position.value,
           widget.selectedIndex.toDouble(),
-          0,
+          // A thumb redirected while it is still travelling keeps the speed it
+          // had. Starting the new flight from rest stops it dead in the middle
+          // of the track, which is the one thing a sprung weight cannot do.
+          _position.velocity,
           tolerance: Tolerance.defaultTolerance,
         ),
       );
