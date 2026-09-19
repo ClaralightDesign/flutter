@@ -70,6 +70,7 @@ void main() {
   _sliderBubbleTests();
   _sliderSnapTests();
   _sliderStepTests();
+  _sliderKeyboardTests();
 }
 
 /// Track pieces are the flat ones, the handle is the tall one that is not the
@@ -1085,5 +1086,378 @@ void _sliderStepTests() {
 
     await gesture.up();
     await tester.pumpAndSettle();
+  });
+}
+
+void _sliderKeyboardTests() {
+  ShapeDecoration handleDecoration(WidgetTester tester) {
+    final handlePositioned = _handle(tester);
+    final box = tester.widget<DecoratedBox>(
+      find.descendant(
+        of: find.byWidget(handlePositioned),
+        matching: find.byType(DecoratedBox),
+      ),
+    );
+    return box.decoration as ShapeDecoration;
+  }
+
+  testWidgets('handle shows accent focus ring and bar shape when focused', (
+    tester,
+  ) async {
+    final focusNode = FocusNode();
+    addTearDown(focusNode.dispose);
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Center(
+          child: SizedBox(
+            width: 300,
+            child: CLSlider(
+              value: 0.5,
+              onChanged: (_) {},
+              focusNode: focusNode,
+            ),
+          ),
+        ),
+      ),
+    );
+
+    final unfocusedShape =
+        handleDecoration(tester).shape as RoundedSuperellipseBorder;
+    expect(unfocusedShape.side, BorderSide.none);
+    expect(_handle(tester).width, CLSlider.thumbWidth);
+    expect(_handle(tester).height, CLSlider.thumbHeight);
+
+    focusNode.requestFocus();
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 200));
+
+    final focusedShape =
+        handleDecoration(tester).shape as RoundedSuperellipseBorder;
+    expect(focusedShape.side.style, BorderStyle.solid);
+    expect(focusedShape.side.width, 2);
+    expect(focusedShape.side.color, CLThemeData().colors.accent);
+    expect(_handle(tester).width, closeTo(CLSlider.hoverLineWidth, 0.01));
+    expect(_handle(tester).height, closeTo(CLSlider.hoverLineHeight, 0.01));
+
+    focusNode.unfocus();
+    await tester.pump();
+    await tester.pumpAndSettle();
+
+    final clearedShape =
+        handleDecoration(tester).shape as RoundedSuperellipseBorder;
+    expect(clearedShape.side, BorderSide.none);
+    expect(_handle(tester).width, closeTo(CLSlider.thumbWidth, 0.01));
+    expect(_handle(tester).height, closeTo(CLSlider.thumbHeight, 0.01));
+  });
+
+  testWidgets('arrow keys step continuous slider by 5% default or keyboardStep', (
+    tester,
+  ) async {
+    var value = 0.5;
+    final focusNode = FocusNode();
+    addTearDown(focusNode.dispose);
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Center(
+          child: StatefulBuilder(
+            builder: (context, setState) => SizedBox(
+              width: 300,
+              child: CLSlider(
+                value: value,
+                onChanged: (v) => setState(() => value = v),
+                focusNode: focusNode,
+                autofocus: true,
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+    await tester.pump();
+
+    await tester.sendKeyEvent(LogicalKeyboardKey.arrowRight);
+    await tester.pump();
+    expect(value, closeTo(0.55, 1e-5));
+
+    await tester.sendKeyEvent(LogicalKeyboardKey.arrowUp);
+    await tester.pump();
+    expect(value, closeTo(0.60, 1e-5));
+
+    await tester.sendKeyEvent(LogicalKeyboardKey.arrowLeft);
+    await tester.pump();
+    expect(value, closeTo(0.55, 1e-5));
+
+    await tester.sendKeyEvent(LogicalKeyboardKey.arrowDown);
+    await tester.pump();
+    expect(value, closeTo(0.50, 1e-5));
+  });
+
+  testWidgets('custom keyboardStep controls step size', (tester) async {
+    var value = 0.2;
+    final focusNode = FocusNode();
+    addTearDown(focusNode.dispose);
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Center(
+          child: StatefulBuilder(
+            builder: (context, setState) => SizedBox(
+              width: 300,
+              child: CLSlider(
+                value: value,
+                keyboardStep: 0.1,
+                onChanged: (v) => setState(() => value = v),
+                focusNode: focusNode,
+                autofocus: true,
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+    await tester.pump();
+
+    await tester.sendKeyEvent(LogicalKeyboardKey.arrowRight);
+    await tester.pump();
+    expect(value, closeTo(0.3, 1e-5));
+  });
+
+  testWidgets('page keys make large jumps and home/end jump to boundaries', (
+    tester,
+  ) async {
+    var value = 0.5;
+    final focusNode = FocusNode();
+    addTearDown(focusNode.dispose);
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Center(
+          child: StatefulBuilder(
+            builder: (context, setState) => SizedBox(
+              width: 300,
+              child: CLSlider(
+                value: value,
+                onChanged: (v) => setState(() => value = v),
+                focusNode: focusNode,
+                autofocus: true,
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+    await tester.pump();
+
+    await tester.sendKeyEvent(LogicalKeyboardKey.pageUp);
+    await tester.pump();
+    expect(value, closeTo(0.7, 1e-5));
+
+    await tester.sendKeyEvent(LogicalKeyboardKey.pageDown);
+    await tester.pump();
+    expect(value, closeTo(0.5, 1e-5));
+
+    await tester.sendKeyEvent(LogicalKeyboardKey.end);
+    await tester.pump();
+    expect(value, 1.0);
+
+    await tester.sendKeyEvent(LogicalKeyboardKey.home);
+    await tester.pump();
+    expect(value, 0.0);
+  });
+
+  testWidgets('stepped slider hops between grid stops using arrow keys', (
+    tester,
+  ) async {
+    var value = 0.0;
+    final focusNode = FocusNode();
+    addTearDown(focusNode.dispose);
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Center(
+          child: StatefulBuilder(
+            builder: (context, setState) => SizedBox(
+              width: 300,
+              child: CLSlider(
+                value: value,
+                step: 0.25,
+                onChanged: (v) => setState(() => value = v),
+                focusNode: focusNode,
+                autofocus: true,
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+    await tester.pump();
+
+    await tester.sendKeyEvent(LogicalKeyboardKey.arrowRight);
+    await tester.pump();
+    expect(value, 0.25);
+
+    await tester.sendKeyEvent(LogicalKeyboardKey.arrowRight);
+    await tester.pump();
+    expect(value, 0.50);
+
+    // From off-grid, arrow keys hop to the next and previous grid stops.
+    value = 0.3;
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Center(
+          child: StatefulBuilder(
+            builder: (context, setState) => SizedBox(
+              width: 300,
+              child: CLSlider(
+                value: value,
+                step: 0.25,
+                onChanged: (v) => setState(() => value = v),
+                focusNode: focusNode,
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+    await tester.pump();
+
+    await tester.sendKeyEvent(LogicalKeyboardKey.arrowRight);
+    await tester.pump();
+    expect(value, 0.50);
+
+    value = 0.3;
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Center(
+          child: StatefulBuilder(
+            builder: (context, setState) => SizedBox(
+              width: 300,
+              child: CLSlider(
+                value: value,
+                step: 0.25,
+                onChanged: (v) => setState(() => value = v),
+                focusNode: focusNode,
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+    await tester.pump();
+
+    await tester.sendKeyEvent(LogicalKeyboardKey.arrowLeft);
+    await tester.pump();
+    expect(value, 0.25);
+  });
+
+  testWidgets('RTL reverses horizontal arrow direction', (tester) async {
+    var value = 0.5;
+    final focusNode = FocusNode();
+    addTearDown(focusNode.dispose);
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Directionality(
+          textDirection: TextDirection.rtl,
+          child: Center(
+            child: StatefulBuilder(
+              builder: (context, setState) => SizedBox(
+                width: 300,
+                child: CLSlider(
+                  value: value,
+                  onChanged: (v) => setState(() => value = v),
+                  focusNode: focusNode,
+                  autofocus: true,
+                ),
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+    await tester.pump();
+
+    // In RTL, left increases and right decreases.
+    await tester.sendKeyEvent(LogicalKeyboardKey.arrowLeft);
+    await tester.pump();
+    expect(value, closeTo(0.55, 1e-5));
+
+    await tester.sendKeyEvent(LogicalKeyboardKey.arrowRight);
+    await tester.pump();
+    expect(value, closeTo(0.50, 1e-5));
+  });
+
+  testWidgets('keyboard stepping summons the value bubble', (tester) async {
+    var value = 0.5;
+    final focusNode = FocusNode();
+    addTearDown(focusNode.dispose);
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Center(
+          child: StatefulBuilder(
+            builder: (context, setState) => SizedBox(
+              width: 300,
+              child: CLSlider(
+                value: value,
+                valueLabel: (v) => '${(v * 100).round()}%',
+                onChanged: (v) => setState(() => value = v),
+                focusNode: focusNode,
+                autofocus: true,
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+    await tester.pump();
+    expect(_bubble, findsNothing);
+
+    await tester.sendKeyEvent(LogicalKeyboardKey.arrowRight);
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 100));
+    expect(_bubble, findsOneWidget);
+
+    // Remains open while interaction continues, then dismisses after inactivity.
+    await tester.pump(const Duration(milliseconds: 500));
+    expect(_bubble, findsOneWidget);
+
+    await tester.pump(const Duration(milliseconds: 600));
+    await tester.pumpAndSettle();
+    expect(_bubble, findsNothing);
+  });
+
+  testWidgets('disabled slider cannot take focus or respond to keys', (
+    tester,
+  ) async {
+    final focusNode = FocusNode();
+    addTearDown(focusNode.dispose);
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Center(
+          child: SizedBox(
+            width: 300,
+            child: CLSlider(
+              value: 0.5,
+              onChanged: null,
+              focusNode: focusNode,
+              autofocus: true,
+            ),
+          ),
+        ),
+      ),
+    );
+    await tester.pump();
+
+    expect(focusNode.hasFocus, isFalse);
+    focusNode.requestFocus();
+    await tester.pump();
+    expect(focusNode.hasFocus, isFalse);
+
+    final shape = handleDecoration(tester).shape as RoundedSuperellipseBorder;
+    expect(shape.side, BorderSide.none);
   });
 }

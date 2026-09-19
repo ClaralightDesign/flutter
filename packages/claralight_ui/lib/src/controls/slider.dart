@@ -3,6 +3,7 @@ import 'dart:math' as math;
 
 import 'package:flutter/physics.dart';
 import 'package:flutter/scheduler.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter/widgets.dart';
 
 import '../foundation/haptics.dart';
@@ -80,6 +81,17 @@ class CLSlider extends StatefulWidget {
   /// caller's own state behind their back is the more surprising of the two.
   final double? step;
 
+  /// An optional focus node to use as the focus node for this slider.
+  final FocusNode? focusNode;
+
+  /// Whether this slider should focus itself when first built.
+  final bool autofocus;
+
+  /// How much the value changes per arrow-key press when [step] is null.
+  ///
+  /// Defaults to 5% of the range `(max - min) * 0.05`.
+  final double? keyboardStep;
+
   const CLSlider({
     super.key,
     required this.value,
@@ -91,8 +103,12 @@ class CLSlider extends StatefulWidget {
     this.snapPoints,
     this.snapRadius = defaultSnapRadius,
     this.step,
+    this.focusNode,
+    this.autofocus = false,
+    this.keyboardStep,
   }) : assert(min < max),
        assert(step == null || step > 0),
+       assert(keyboardStep == null || keyboardStep > 0),
        assert(snapRadius > 0),
        assert(
          step == null || snapPoints == null,
@@ -204,6 +220,13 @@ class _CLSliderState extends State<CLSlider> with TickerProviderStateMixin {
 
   late final AnimationController _press;
   late final AnimationController _hover;
+  late final AnimationController _focus;
+
+  FocusNode? _ownedFocusNode;
+  FocusNode get _focusNode => widget.focusNode ?? _ownedFocusNode!;
+  bool _focused = false;
+  Timer? _keyboardBubbleTimer;
+  bool _showKeyboardBubble = false;
 
   /// The bubble's flight: 0 is the capsule still sitting on the track, 1 is the
   /// bubble in the air. It carries its own overshoot, which is the pop.
@@ -257,11 +280,52 @@ class _CLSliderState extends State<CLSlider> with TickerProviderStateMixin {
     super.initState();
     _press = AnimationController.unbounded(vsync: this);
     _hover = AnimationController(vsync: this, duration: CLMotion.fast);
+    _focus = AnimationController(vsync: this, duration: CLMotion.fast);
     _bubble = AnimationController(vsync: this, duration: CLMotion.standard)
       ..addStatusListener(_handleBubbleStatus);
     _balloon = createTicker(_handleBalloonTick);
     _visual = AnimationController.unbounded(value: _fraction, vsync: this);
-    _geometryAnimation = Listenable.merge([_press, _hover, _visual]);
+    _adoptFocusNode();
+    if (_focusNode.hasFocus) _focus.value = 1;
+    _geometryAnimation = Listenable.merge([
+      _press,
+      _hover,
+      _focus,
+      _visual,
+      _focusNode,
+    ]);
+  }
+
+  void _adoptFocusNode() {
+    _ownedFocusNode =
+        widget.focusNode == null ? FocusNode(debugLabel: 'CLSlider') : null;
+    _focusNode.addListener(_onFocusChanged);
+    _focused = _focusNode.hasFocus;
+  }
+
+  void _onFocusChanged() {
+    final hasFocus = _focusNode.hasFocus;
+    if (_focused != hasFocus) {
+      _focused = hasFocus;
+      if (!hasFocus) {
+        _keyboardBubbleTimer?.cancel();
+        if (_showKeyboardBubble) {
+          _showKeyboardBubble = false;
+          _syncBubble();
+        }
+      }
+      if (_disableAnimations) {
+        _focus.stop();
+        _focus.value = hasFocus ? 1 : 0;
+      } else {
+        if (hasFocus) {
+          _focus.animateTo(1, duration: CLMotion.fast, curve: CLMotion.easeOut);
+        } else {
+          _focus.animateTo(0, duration: CLMotion.fast, curve: CLMotion.easeIn);
+        }
+      }
+      setState(() {});
+    }
   }
 
   @override
@@ -276,9 +340,11 @@ class _CLSliderState extends State<CLSlider> with TickerProviderStateMixin {
   void _snapReducedMotionGeometry() {
     _press.stop();
     _hover.stop();
+    _focus.stop();
     _visual.stop();
     _press.value = 0;
     _hover.value = 0;
+    _focus.value = _focused ? 1 : 0;
     _visual.value = _fraction;
     _stopBalloon();
   }
@@ -286,12 +352,26 @@ class _CLSliderState extends State<CLSlider> with TickerProviderStateMixin {
   @override
   void didUpdateWidget(CLSlider oldWidget) {
     super.didUpdateWidget(oldWidget);
+    if (widget.focusNode != oldWidget.focusNode) {
+      final oldFocusNode = oldWidget.focusNode ?? _ownedFocusNode!;
+      oldFocusNode.removeListener(_onFocusChanged);
+      _ownedFocusNode?.dispose();
+      _adoptFocusNode();
+      _geometryAnimation = Listenable.merge([
+        _press,
+        _hover,
+        _focus,
+        _visual,
+        _focusNode,
+      ]);
+    }
     if (widget.valueLabel != oldWidget.valueLabel ||
         widget.min != oldWidget.min ||
         widget.max != oldWidget.max) {
       _bubbleMeasureKey = null;
     }
     if (!_enabled && _hover.value != 0) _setHovered(false);
+    if (!_enabled && _focusNode.hasFocus) _focusNode.unfocus();
     final target = _fraction;
     // A drag keeps the handle under the finger, but only where there is
     // somewhere for it to be: on a grid the handle has to travel to the next
@@ -318,8 +398,12 @@ class _CLSliderState extends State<CLSlider> with TickerProviderStateMixin {
 
   @override
   void dispose() {
+    _keyboardBubbleTimer?.cancel();
+    _focusNode.removeListener(_onFocusChanged);
+    _ownedFocusNode?.dispose();
     _press.dispose();
     _hover.dispose();
+    _focus.dispose();
     _bubble.dispose();
     _balloon.dispose();
     _tilt.dispose();
@@ -328,6 +412,8 @@ class _CLSliderState extends State<CLSlider> with TickerProviderStateMixin {
   }
 
   bool get _enabled => widget.onChanged != null;
+
+  bool get _isFocused => _enabled && _focusNode.hasFocus;
 
   double get _fraction =>
       ((widget.value - widget.min) / (widget.max - widget.min)).clamp(0.0, 1.0);
@@ -524,7 +610,9 @@ class _CLSliderState extends State<CLSlider> with TickerProviderStateMixin {
   /// to hover — a touch drag.
   double get _handleWidth {
     final pressed = _press.value.clamp(0.0, 1.0);
-    final line = math.max(_hover.value, pressed);
+    final line = math
+        .max(math.max(_hover.value, _focus.value), pressed)
+        .clamp(0.0, 1.0);
     return _lerp(
       _lerp(CLSlider.thumbWidth, CLSlider.hoverLineWidth, line),
       CLSlider.pressLineWidth,
@@ -542,7 +630,9 @@ class _CLSliderState extends State<CLSlider> with TickerProviderStateMixin {
   }
 
   void _syncOverlay() {
-    final showBubble = widget.valueLabel != null && (_hovered || _pressed);
+    final showBubble =
+        widget.valueLabel != null &&
+        (_hovered || _pressed || _showKeyboardBubble);
     final needOverlay =
         _pressed || showBubble || _bubble.isAnimating || _bubble.value > 0;
     if (needOverlay && !_portal.isShowing) {
@@ -558,7 +648,8 @@ class _CLSliderState extends State<CLSlider> with TickerProviderStateMixin {
   /// the press itself on a touch drag, where there is no hover to reach it.
   void _syncBubble() {
     if (widget.valueLabel == null) return;
-    final show = _enabled && (_hovered || _pressed);
+    final show =
+        _enabled && (_hovered || _pressed || _showKeyboardBubble);
     if (_disableAnimations) {
       // Fixed geometry, fade only: the bubble is already where it belongs and
       // only its opacity crosses.
@@ -587,7 +678,158 @@ class _CLSliderState extends State<CLSlider> with TickerProviderStateMixin {
   void _handleBubbleStatus(AnimationStatus status) {
     if (status != AnimationStatus.dismissed) return;
     _stopBalloon();
-    if (!_pressed && _portal.isShowing) _portal.hide();
+    if (!_pressed && !_showKeyboardBubble && _portal.isShowing) _portal.hide();
+  }
+
+  void _triggerKeyboardBubble() {
+    if (widget.valueLabel == null || !_enabled) return;
+    _keyboardBubbleTimer?.cancel();
+    _showKeyboardBubble = true;
+    _syncOverlay();
+    _ensureBalloonActive();
+    _keyboardBubbleTimer = Timer(const Duration(milliseconds: 1000), () {
+      if (mounted) {
+        _showKeyboardBubble = false;
+        _syncBubble();
+      }
+    });
+  }
+
+  void _step(int direction, {bool isLarge = false}) {
+    if (!_enabled) return;
+    final current = widget.value;
+    double target;
+
+    final step = widget.step;
+    if (step != null) {
+      target = _stepOnGrid(current, direction, isLarge: isLarge);
+    } else {
+      final span = widget.max - widget.min;
+      final singleStep = widget.keyboardStep ?? (span * 0.05);
+      final stepAmount =
+          isLarge ? math.max(singleStep, span * 0.2) : singleStep;
+      final raw =
+          (current + stepAmount * direction).clamp(widget.min, widget.max);
+      final cleanRaw = (raw * 1e6).round() / 1e6;
+      target = _stepContinuous(current, cleanRaw, direction);
+    }
+
+    if ((target - current).abs() > 1e-9) {
+      widget.onChanged!(target);
+      unawaited(clSelectionHaptic());
+    }
+    _triggerKeyboardBubble();
+  }
+
+  double _stepContinuous(double current, double rawTarget, int direction) {
+    final points = widget.snapPoints;
+    if (points == null || points.isEmpty) return rawTarget;
+
+    final usable =
+        (_layoutWidth > CLSlider.pressLineWidth
+            ? _layoutWidth
+            : 300.0) -
+        CLSlider.pressLineWidth;
+    final span = widget.max - widget.min;
+    final holdShare =
+        (widget.snapRadius * CLSlider._snapHoldShare / usable) * span;
+
+    for (final point in points) {
+      final clampedPoint = point.clamp(widget.min, widget.max);
+      final distToSnap = (rawTarget - clampedPoint).abs();
+      final currentDistToSnap = (current - clampedPoint).abs();
+      if (distToSnap <= holdShare && currentDistToSnap > 1e-6) {
+        return clampedPoint;
+      }
+    }
+    return rawTarget;
+  }
+
+  double _stepOnGrid(double current, int direction, {bool isLarge = false}) {
+    final step = widget.step!;
+    final span = widget.max - widget.min;
+    final last = (span / step).floor();
+    final stops = <double>[
+      for (var i = 0; i <= last; i++) widget.min + i * step,
+      if ((widget.min + last * step - widget.max).abs() > 1e-6) widget.max,
+    ];
+
+    final stepCount =
+        isLarge ? math.max(1, ((span * 0.2) / step).round()) : 1;
+
+    if (direction > 0) {
+      final higherStops = stops.where((s) => s > current + 1e-6).toList();
+      if (higherStops.isEmpty) return widget.max;
+      final targetIndex = math.min(stepCount - 1, higherStops.length - 1);
+      return higherStops[targetIndex];
+    } else {
+      final lowerStops = stops.where((s) => s < current - 1e-6).toList();
+      if (lowerStops.isEmpty) return widget.min;
+      final targetIndex = math.max(0, lowerStops.length - stepCount);
+      return lowerStops[targetIndex];
+    }
+  }
+
+  double _peekStep(int direction) {
+    final step = widget.step;
+    if (step != null) {
+      return _stepOnGrid(widget.value, direction);
+    }
+    final span = widget.max - widget.min;
+    final singleStep = widget.keyboardStep ?? (span * 0.05);
+    final raw =
+        (widget.value + singleStep * direction).clamp(widget.min, widget.max);
+    final cleanRaw = (raw * 1e6).round() / 1e6;
+    return _stepContinuous(widget.value, cleanRaw, direction);
+  }
+
+  void _jumpTo(double target) {
+    if (!_enabled) return;
+    final clamped = target.clamp(widget.min, widget.max);
+    final quantized = _quantize(clamped);
+    if ((quantized - widget.value).abs() > 1e-9) {
+      widget.onChanged!(quantized);
+      unawaited(clSelectionHaptic());
+    }
+    _triggerKeyboardBubble();
+  }
+
+  KeyEventResult _handleKeyEvent(FocusNode node, KeyEvent event) {
+    if (!_enabled) return KeyEventResult.ignored;
+    if (event is! KeyDownEvent && event is! KeyRepeatEvent) {
+      return KeyEventResult.ignored;
+    }
+
+    final isRtl = Directionality.maybeOf(context) == TextDirection.rtl;
+    final key = event.logicalKey;
+
+    if (key == LogicalKeyboardKey.arrowRight) {
+      _step(isRtl ? -1 : 1);
+      return KeyEventResult.handled;
+    } else if (key == LogicalKeyboardKey.arrowLeft) {
+      _step(isRtl ? 1 : -1);
+      return KeyEventResult.handled;
+    } else if (key == LogicalKeyboardKey.arrowUp) {
+      _step(1);
+      return KeyEventResult.handled;
+    } else if (key == LogicalKeyboardKey.arrowDown) {
+      _step(-1);
+      return KeyEventResult.handled;
+    } else if (key == LogicalKeyboardKey.pageUp) {
+      _step(1, isLarge: true);
+      return KeyEventResult.handled;
+    } else if (key == LogicalKeyboardKey.pageDown) {
+      _step(-1, isLarge: true);
+      return KeyEventResult.handled;
+    } else if (key == LogicalKeyboardKey.home) {
+      _jumpTo(widget.min);
+      return KeyEventResult.handled;
+    } else if (key == LogicalKeyboardKey.end) {
+      _jumpTo(widget.max);
+      return KeyEventResult.handled;
+    }
+
+    return KeyEventResult.ignored;
   }
 
   void _stopBalloon() {
@@ -681,16 +923,34 @@ class _CLSliderState extends State<CLSlider> with TickerProviderStateMixin {
       ),
     );
 
-    return Semantics(
-      slider: true,
-      enabled: _enabled,
-      value:
-          widget.valueLabel?.call(widget.value) ??
-          widget.value.toStringAsFixed(2),
-      child: OverlayPortal(
-        controller: _portal,
-        overlayChildBuilder: _buildOverlay,
-        child: CompositedTransformTarget(link: _link, child: rail),
+    final currentValue =
+        widget.valueLabel?.call(widget.value) ??
+        widget.value.toStringAsFixed(2);
+    final increasedValue =
+        widget.valueLabel?.call(_peekStep(1)) ??
+        _peekStep(1).toStringAsFixed(2);
+    final decreasedValue =
+        widget.valueLabel?.call(_peekStep(-1)) ??
+        _peekStep(-1).toStringAsFixed(2);
+
+    return Focus(
+      focusNode: _focusNode,
+      autofocus: widget.autofocus,
+      canRequestFocus: _enabled,
+      onKeyEvent: _handleKeyEvent,
+      child: Semantics(
+        slider: true,
+        enabled: _enabled,
+        value: currentValue,
+        increasedValue: _enabled ? increasedValue : null,
+        decreasedValue: _enabled ? decreasedValue : null,
+        onIncrease: _enabled ? () => _step(1) : null,
+        onDecrease: _enabled ? () => _step(-1) : null,
+        child: OverlayPortal(
+          controller: _portal,
+          overlayChildBuilder: _buildOverlay,
+          child: CompositedTransformTarget(link: _link, child: rail),
+        ),
       ),
     );
   }
@@ -960,7 +1220,9 @@ class _CLSliderState extends State<CLSlider> with TickerProviderStateMixin {
     required double thumbLeft,
   }) {
     final pressed = _press.value.clamp(0.0, 1.0);
-    final line = math.max(_hover.value, pressed);
+    final line = math
+        .max(math.max(_hover.value, _focus.value), pressed)
+        .clamp(0.0, 1.0);
     final handleWidth = _handleWidth;
     final handleHeight = _lerp(
       _lerp(CLSlider.thumbHeight, CLSlider.hoverLineHeight, line),
@@ -1058,12 +1320,25 @@ class _CLSliderState extends State<CLSlider> with TickerProviderStateMixin {
               borderRadius: BorderRadius.circular(
                 math.min(handleWidth, handleHeight) / 2,
               ),
-              shadows: const [
-                BoxShadow(
+              side: _isFocused
+                  ? BorderSide(
+                      color: theme.colors.accent,
+                      width: 2,
+                      strokeAlign: BorderSide.strokeAlignOutside,
+                    )
+                  : BorderSide.none,
+              shadows: [
+                const BoxShadow(
                   color: Color(0x4D000000),
                   blurRadius: 6,
                   offset: Offset(0, 1),
                 ),
+                if (_isFocused)
+                  BoxShadow(
+                    color: theme.colors.accent.withValues(alpha: 0.35),
+                    blurRadius: 4,
+                    spreadRadius: 1,
+                  ),
               ],
             ),
           ),
