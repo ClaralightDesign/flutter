@@ -1,10 +1,11 @@
+import 'dart:async';
 import 'dart:math' as math;
 
 import 'package:flutter/physics.dart';
-import 'package:flutter/services.dart';
 import 'package:flutter/scheduler.dart';
 import 'package:flutter/widgets.dart';
 
+import '../foundation/haptics.dart';
 import '../foundation/numeric_text.dart';
 import '../foundation/shape.dart';
 import '../overlays/anchored_overlay.dart';
@@ -367,7 +368,7 @@ class _CLSliderState extends State<CLSlider> with TickerProviderStateMixin {
     final previous = _stepTickValue;
     _stepTickValue = value;
     if (previous == null || !_tracking || previous == value) return;
-    HapticFeedback.selectionClick();
+    unawaited(clSelectionHaptic());
   }
 
   /// A tick as the handle crosses a snap point. What crosses is the pointer
@@ -380,7 +381,7 @@ class _CLSliderState extends State<CLSlider> with TickerProviderStateMixin {
     final high = math.max(previous, x);
     for (final snap in snaps) {
       if (snap > low && snap <= high) {
-        HapticFeedback.selectionClick();
+        unawaited(clSelectionHaptic());
         return;
       }
     }

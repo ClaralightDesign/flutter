@@ -3,18 +3,16 @@ import 'dart:math' as math;
 import 'dart:ui' as ui show SemanticsValidationResult;
 
 import 'package:flutter/cupertino.dart';
-import 'package:flutter/foundation.dart';
 import 'package:flutter/gestures.dart';
 import 'package:flutter/services.dart';
 
+import '../foundation/haptics.dart';
 import '../foundation/numeric_text.dart';
 import '../foundation/control_size.dart';
 import '../foundation/shape.dart';
 import '../overlays/anchored_overlay.dart';
 import '../theme/theme.dart';
 import 'numeric_scrub_cursor.dart';
-
-const _macOSHapticsChannel = MethodChannel('dev.claralight.ui/haptics');
 
 /// The screen direction in which a numeric field's value increases.
 ///
@@ -513,24 +511,10 @@ class _CLTextFieldState extends State<CLTextField>
   void _emitPointerHaptic() {
     if (_hapticSentThisFrame) return;
     _hapticSentThisFrame = true;
-    unawaited(_performSelectionHaptic());
+    unawaited(clSelectionHaptic());
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _hapticSentThisFrame = false;
     });
-  }
-
-  Future<void> _performSelectionHaptic() async {
-    if (!kIsWeb && defaultTargetPlatform == TargetPlatform.macOS) {
-      try {
-        await _macOSHapticsChannel.invokeMethod<void>('selectionClick');
-      } on MissingPluginException {
-        // Older hosts may not have regenerated plugin registration yet.
-      } on PlatformException {
-        // Haptics are nonessential and may be unavailable on some Macs.
-      }
-      return;
-    }
-    await HapticFeedback.selectionClick();
   }
 
   double get _currentRulerSpacing {
