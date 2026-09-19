@@ -68,6 +68,7 @@ void main() {
   _sliderShapeTests();
   _sliderBubbleTests();
   _sliderSnapTests();
+  _sliderStepTests();
 }
 
 /// Track pieces are the flat ones, the handle is the tall one that is not the
@@ -818,5 +819,148 @@ void _sliderSnapTests() {
       expect(step, greaterThanOrEqualTo(-1e-9));
       expect(step, lessThan(3.5));
     }
+  });
+}
+
+Widget _steppedSlider({
+  required double step,
+  double min = 0,
+  double max = 1,
+  required void Function(double) record,
+}) => MaterialApp(
+  home: Center(
+    child: SizedBox(
+      width: 300,
+      child: _StepHarness(step: step, min: min, max: max, record: record),
+    ),
+  ),
+);
+
+class _StepHarness extends StatefulWidget {
+  final double step;
+  final double min;
+  final double max;
+  final void Function(double) record;
+
+  const _StepHarness({
+    required this.step,
+    required this.min,
+    required this.max,
+    required this.record,
+  });
+
+  @override
+  State<_StepHarness> createState() => _StepHarnessState();
+}
+
+class _StepHarnessState extends State<_StepHarness> {
+  late double _value = widget.min;
+
+  @override
+  Widget build(BuildContext context) => CLSlider(
+    value: _value,
+    min: widget.min,
+    max: widget.max,
+    step: widget.step,
+    onChanged: (value) {
+      widget.record(value);
+      setState(() => _value = value);
+    },
+  );
+}
+
+void _sliderStepTests() {
+  testWidgets('a step rail comes to rest only on its grid', (tester) async {
+    final reported = <double>[];
+    await tester.pumpWidget(_steppedSlider(step: 0.25, record: reported.add));
+    final rail = tester.getTopLeft(find.byType(CLSlider));
+
+    for (var pointer = 0.0; pointer <= _usable; pointer += 7) {
+      final gesture = await tester.startGesture(
+        rail + Offset(_localX(pointer), CLSlider.hitHeight / 2),
+      );
+      await tester.pump();
+      await gesture.up();
+      await tester.pumpAndSettle();
+    }
+
+    expect(reported, isNotEmpty);
+    for (final value in reported) {
+      expect((value * 4 - (value * 4).round()).abs(), lessThan(1e-9));
+    }
+    expect(reported.toSet().length, greaterThan(1));
+  });
+
+  testWidgets('the end of the rail is a stop even off the grid', (
+    tester,
+  ) async {
+    final reported = <double>[];
+    // 0, 3, 6, 9 — and 10, which the grid never reaches.
+    await tester.pumpWidget(
+      _steppedSlider(step: 3, min: 0, max: 10, record: reported.add),
+    );
+    final rail = tester.getTopLeft(find.byType(CLSlider));
+
+    final gesture = await tester.startGesture(
+      rail + Offset(_localX(_usable), CLSlider.hitHeight / 2),
+    );
+    await tester.pump();
+    expect(reported.last, 10);
+    await gesture.up();
+    await tester.pumpAndSettle();
+  });
+
+  testWidgets('a value handed in off the grid is drawn where it says', (
+    tester,
+  ) async {
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Center(
+          child: SizedBox(
+            width: 300,
+            child: CLSlider(value: 0.37, step: 0.25, onChanged: (_) {}),
+          ),
+        ),
+      ),
+    );
+
+    expect(
+      _handle(tester).left,
+      closeTo((300 - CLSlider.thumbWidth) * 0.37, 0.01),
+    );
+  });
+
+  testWidgets('the handle springs between stops instead of teleporting', (
+    tester,
+  ) async {
+    await tester.pumpWidget(_steppedSlider(step: 0.5, record: (_) {}));
+    final rail = tester.getTopLeft(find.byType(CLSlider));
+
+    final gesture = await tester.startGesture(
+      rail + Offset(_localX(0), CLSlider.hitHeight / 2),
+      kind: PointerDeviceKind.mouse,
+    );
+    await gesture.moveBy(const Offset(4, 0));
+    await tester.pump();
+
+    // Straight to the far stop, while the drag is still live.
+    await gesture.moveTo(
+      rail + Offset(_localX(_usable), CLSlider.hitHeight / 2),
+    );
+    await tester.pump();
+    final onArrival = _handle(tester).left!;
+
+    await tester.pump(const Duration(milliseconds: 16));
+    final aFrameLater = _handle(tester).left!;
+
+    await tester.pumpAndSettle();
+    final settled = _handle(tester).left!;
+
+    // The grid moved the value in one go; the handle did not.
+    expect(aFrameLater, greaterThan(onArrival));
+    expect(aFrameLater, lessThan(settled));
+
+    await gesture.up();
+    await tester.pumpAndSettle();
   });
 }

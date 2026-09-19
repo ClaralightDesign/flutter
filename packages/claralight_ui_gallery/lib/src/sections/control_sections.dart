@@ -220,6 +220,8 @@ class _SliderSection extends StatefulWidget {
 class _SliderSectionState extends State<_SliderSection> {
   double _value = 0.62;
   double _temperature = 22;
+  double _balance = 0;
+  double _rating = 3;
 
   @override
   Widget build(BuildContext context) {
@@ -244,6 +246,30 @@ class _SliderSectionState extends State<_SliderSection> {
             max: 30,
             onChanged: (v) => setState(() => _temperature = v),
             valueLabel: (v) => '${v.round()}°',
+          ),
+          const SizedBox(height: 16),
+          Text('吸附点：两端与中点有磁性，中间的值照样停得住', style: caption),
+          const SizedBox(height: 6),
+          CLSlider(
+            value: _balance,
+            min: -1,
+            max: 1,
+            snapPoints: const [-1, 0, 1],
+            onChanged: (v) => setState(() => _balance = v),
+            valueLabel: (v) => v == 0
+                ? '居中'
+                : '${v < 0 ? 'L' : 'R'} ${(v.abs() * 100).round()}',
+          ),
+          const SizedBox(height: 16),
+          Text('步进：只停在整档上', style: caption),
+          const SizedBox(height: 6),
+          CLSlider(
+            value: _rating,
+            min: 1,
+            max: 5,
+            step: 1,
+            onChanged: (v) => setState(() => _rating = v),
+            valueLabel: (v) => '${v.round()} 档',
           ),
           const SizedBox(height: 16),
           const CLSlider(value: 0.3, onChanged: null),

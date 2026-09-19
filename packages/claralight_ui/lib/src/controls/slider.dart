@@ -29,7 +29,9 @@ import '../theme/theme.dart';
 ///
 /// [snapPoints] give the rail places the handle is drawn to. The pull is soft:
 /// no value is ever out of reach, the handle only grows heavy over a point and
-/// breaks free once the pointer has pushed far enough past it.
+/// breaks free once the pointer has pushed far enough past it. [step] is the
+/// hard version of the same idea — a grid the handle springs between, with
+/// nothing in the gaps — and the two are alternatives, not layers.
 class CLSlider extends StatefulWidget {
   final double value;
   final ValueChanged<double>? onChanged;
@@ -51,6 +53,18 @@ class CLSlider extends StatefulWidget {
   /// cross than the rail around it does.
   final List<double>? snapPoints;
 
+  /// The spacing of a grid the handle may only come to rest on, in the
+  /// slider's own units. Null is the continuous rail, which is the default.
+  ///
+  /// [max] is always a resting place even when the grid does not divide the
+  /// range evenly: a handle that cannot be pulled to the end of its own rail
+  /// reads as broken, whatever the arithmetic says.
+  ///
+  /// Only values the slider itself produces are put on the grid. A [value]
+  /// handed in off-grid is drawn where it says it is, since correcting the
+  /// caller's own state behind their back is the more surprising of the two.
+  final double? step;
+
   const CLSlider({
     super.key,
     required this.value,
@@ -60,7 +74,14 @@ class CLSlider extends StatefulWidget {
     this.activeColor,
     this.valueLabel,
     this.snapPoints,
-  }) : assert(min < max);
+    this.step,
+  }) : assert(min < max),
+       assert(step == null || step > 0),
+       assert(
+         step == null || snapPoints == null,
+         'A grid and a set of magnets are two ways to answer the same '
+         'question. Pick one.',
+       );
 
   static const double trackHeight = 6;
 
@@ -181,6 +202,9 @@ class _CLSliderState extends State<CLSlider> with TickerProviderStateMixin {
   /// open with a tick for ground it never covered.
   double? _snapTickX;
 
+  /// The stop the grid last delivered, so arriving at the next one can tick.
+  double? _stepTickValue;
+
   static const double _snapEpsilon = 0.5;
 
   @override
@@ -224,7 +248,10 @@ class _CLSliderState extends State<CLSlider> with TickerProviderStateMixin {
     }
     if (!_enabled && _hover.value != 0) _setHovered(false);
     final target = _fraction;
-    if (_disableAnimations || _tracking) {
+    // A drag keeps the handle under the finger, but only where there is
+    // somewhere for it to be: on a grid the handle has to travel to the next
+    // stop, and that travel is the spring's, not a teleport's.
+    if (_disableAnimations || (_tracking && widget.step == null)) {
       _visual.stop();
       _visual.value = target;
     } else if ((target - _visual.value).abs() > 0.0005) {
@@ -268,7 +295,28 @@ class _CLSliderState extends State<CLSlider> with TickerProviderStateMixin {
     final snaps = _snapPositions(usable);
     _tickOverSnapPoints(x, snaps);
     final fraction = (_magnetize(x, snaps) / usable).clamp(0.0, 1.0);
-    widget.onChanged!(widget.min + fraction * (widget.max - widget.min));
+    final value = _quantize(
+      widget.min + fraction * (widget.max - widget.min),
+    );
+    _tickOverSteps(value);
+    widget.onChanged!(value);
+  }
+
+  /// The nearest resting place on [CLSlider.step]'s grid, with [CLSlider.max]
+  /// standing in as the last one whenever the grid stops short of it.
+  ///
+  /// The index is found by rounding and the value rebuilt from it, rather than
+  /// walked to by adding a step at a time, so a long rail does not accumulate
+  /// a drift that puts its stops off the numbers they are named by.
+  double _quantize(double value) {
+    final step = widget.step;
+    if (step == null) return value;
+    final last = ((widget.max - widget.min) / step).floor();
+    final index = ((value - widget.min) / step).round().clamp(0, last);
+    final onGrid = widget.min + index * step;
+    return (widget.max - value).abs() < (value - onGrid).abs()
+        ? widget.max
+        : onGrid;
   }
 
   /// [CLSlider.snapPoints] in the pointer's own units, which is where the pull
@@ -313,6 +361,15 @@ class _CLSliderState extends State<CLSlider> with TickerProviderStateMixin {
     return offset.abs() < _snapEpsilon ? nearest : nearest + offset;
   }
 
+  /// A tick as the handle arrives at the next stop on the grid.
+  void _tickOverSteps(double value) {
+    if (widget.step == null) return;
+    final previous = _stepTickValue;
+    _stepTickValue = value;
+    if (previous == null || !_tracking || previous == value) return;
+    HapticFeedback.selectionClick();
+  }
+
   /// A tick as the handle crosses a snap point. What crosses is the pointer
   /// rather than the bent value, so the tick arrives under the finger.
   void _tickOverSnapPoints(double x, List<double> snaps) {
@@ -332,7 +389,10 @@ class _CLSliderState extends State<CLSlider> with TickerProviderStateMixin {
   void _setPressed(bool pressed, {bool tracking = false}) {
     _tracking = pressed && tracking;
     _pressed = pressed;
-    if (!pressed) _snapTickX = null;
+    if (!pressed) {
+      _snapTickX = null;
+      _stepTickValue = null;
+    }
     _syncOverlay();
     if (!pressed &&
         (widget.valueLabel == null ||
