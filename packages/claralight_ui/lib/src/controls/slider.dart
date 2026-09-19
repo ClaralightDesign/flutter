@@ -97,8 +97,14 @@ class CLSlider extends StatefulWidget {
   static const double pressLineWidth = 2.5;
   static const double pressLineHeight = 18;
 
-  /// The distance the track keeps from the handle — [CLProgressBar]'s gap.
+  /// The distance the track keeps from the handle — [CLProgressBar]'s gap, and
+  /// the width of the break it leaves at a stop the handle can rest on.
   static const double gap = 4;
+
+  /// The dot marking a [snapPoints] stop. As wide as the pressed handle, so the
+  /// line a drag narrows the handle to arrives exactly the width of the mark it
+  /// is landing on, whatever the rail's own thickness is.
+  static const double snapDotDiameter = pressLineWidth;
 
   /// The box that answers to the pointer. Sized from the resting capsule, so
   /// the handle narrowing to a line never pulls the box out from under the
@@ -318,9 +324,7 @@ class _CLSliderState extends State<CLSlider> with TickerProviderStateMixin {
     final snaps = _snapPositions(usable);
     _tickOverSnapPoints(x, snaps);
     final fraction = (_magnetize(x, snaps) / usable).clamp(0.0, 1.0);
-    final value = _quantize(
-      widget.min + fraction * (widget.max - widget.min),
-    );
+    final value = _quantize(widget.min + fraction * (widget.max - widget.min));
     _tickOverSteps(value);
     widget.onChanged!(value);
   }
@@ -340,6 +344,27 @@ class _CLSliderState extends State<CLSlider> with TickerProviderStateMixin {
     return (widget.max - value).abs() < (value - onGrid).abs()
         ? widget.max
         : onGrid;
+  }
+
+  /// Where along the rail the handle is allowed to come to rest, as fractions
+  /// of it. Empty for the continuous rail, which has no such places for the
+  /// reason that every place is one.
+  List<double> _markFractions() {
+    final span = widget.max - widget.min;
+    final step = widget.step;
+    if (step != null) {
+      // The stops [_quantize] rounds to, [CLSlider.max] included, so what is
+      // drawn is where the handle actually lands rather than where the
+      // arithmetic on its own would have put it.
+      final last = (span / step).floor();
+      return [for (var i = 0; i <= last; i++) i * step / span, 1.0];
+    }
+    final points = widget.snapPoints;
+    if (points == null) return const [];
+    return [
+      for (final point in points)
+        (point.clamp(widget.min, widget.max) - widget.min) / span,
+    ];
   }
 
   /// [CLSlider.snapPoints] in the pointer's own units, which is where the pull
@@ -911,18 +936,58 @@ class _CLSliderState extends State<CLSlider> with TickerProviderStateMixin {
     final handleLeft = center - handleWidth / 2;
     final handleRight = center + handleWidth / 2;
 
-    final active = _segment(
-      from: 0,
-      to: handleLeft - CLSlider.gap,
-      width: width,
-      color: activeColor,
-    );
-    final rest = _segment(
-      from: handleRight + CLSlider.gap,
-      to: width,
-      width: width,
-      color: theme.colors.track,
-    );
+    // Everywhere the rail is interrupted. The handle is one such place and the
+    // stops it may rest on are the others: a rail the handle can only stand on
+    // certain parts of says so by being broken there.
+    final breaks = <(double, double)>[
+      (handleLeft - CLSlider.gap, handleRight + CLSlider.gap),
+    ];
+    final dots = <double>[];
+    for (final fraction in _markFractions()) {
+      // Read off the pressed handle's mapping, which is the one the pointer is
+      // measured on and the only one that does not move: the handle under a
+      // finger is a line of exactly this width, so it comes to rest dead on its
+      // mark, while the resting capsule is wide enough to cover that mark from
+      // wherever its own wider travel puts it. Laying the marks out on the live
+      // width instead slides them all outward as the handle narrows, stretching
+      // the rail on hover.
+      final x =
+          CLSlider.pressLineWidth / 2 +
+          (width - CLSlider.pressLineWidth) * fraction;
+      if (widget.step != null) {
+        // The ends of the rail are already ends. Breaking them would only saw
+        // the caps off.
+        if (fraction <= 0 || fraction >= 1) continue;
+        breaks.add((x - CLSlider.gap / 2, x + CLSlider.gap / 2));
+      } else {
+        dots.add(x);
+        breaks.add((
+          x - CLSlider.snapDotDiameter / 2 - CLSlider.gap,
+          x + CLSlider.snapDotDiameter / 2 + CLSlider.gap,
+        ));
+      }
+    }
+    breaks.sort((a, b) => a.$1.compareTo(b.$1));
+
+    // A segment with no room leaves the rail entirely rather than standing in
+    // the stack as an empty box: a stack with any unpositioned child takes that
+    // child's size, which would collapse the slider to nothing at either end of
+    // the range.
+    final rail = <Widget>[];
+    var from = 0.0;
+    for (final (start, end) in [...breaks, (width, width)]) {
+      final piece = _segment(
+        from: from,
+        to: start,
+        width: width,
+        // One colour up to the handle and another past it. No piece straddles
+        // the handle to be caught between the two, the handle being itself a
+        // break.
+        color: (from + start) / 2 < center ? activeColor : theme.colors.track,
+      );
+      if (piece != null) rail.add(piece);
+      from = math.max(from, end);
+    }
 
     final (hoverLeft, hoverRight) = _hoverBoxHorizontal(width);
     final hoverBoxWidth = hoverRight - hoverLeft;
@@ -930,12 +995,22 @@ class _CLSliderState extends State<CLSlider> with TickerProviderStateMixin {
     return Stack(
       alignment: Alignment.centerLeft,
       children: [
-        // A segment with no room leaves the stack entirely rather than standing
-        // in it as an empty box: a stack with any unpositioned child takes that
-        // child's size, which would collapse the slider to nothing at either end
-        // of the range.
-        ?active,
-        ?rest,
+        ...rail,
+        for (final x in dots)
+          Positioned(
+            left: x - CLSlider.snapDotDiameter / 2,
+            top: (CLSlider.hitHeight - CLSlider.snapDotDiameter) / 2,
+            width: CLSlider.snapDotDiameter,
+            height: CLSlider.snapDotDiameter,
+            child: DecoratedBox(
+              decoration: clSmoothDecoration(
+                color: x < center ? activeColor : theme.colors.track,
+                borderRadius: BorderRadius.circular(
+                  CLSlider.snapDotDiameter / 2,
+                ),
+              ),
+            ),
+          ),
         Positioned(
           left: handleLeft,
           top: (CLSlider.hitHeight - handleHeight) / 2,
