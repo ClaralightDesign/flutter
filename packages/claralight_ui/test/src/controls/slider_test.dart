@@ -216,6 +216,31 @@ void _sliderShapeTests() {
     expect(_handle(tester).width, CLSlider.thumbWidth);
   });
 
+  testWidgets('pressing slightly contracts the hovered handle', (tester) async {
+    await tester.pumpWidget(_slider());
+
+    final gesture = await tester.createGesture(kind: PointerDeviceKind.mouse);
+    await gesture.addPointer(location: Offset.zero);
+    addTearDown(gesture.removePointer);
+    final center = tester.getCenter(find.byType(CLSlider));
+
+    await gesture.moveTo(center);
+    await tester.pumpAndSettle();
+    final hovered = _handle(tester);
+    expect(hovered.width, closeTo(CLSlider.hoverLineWidth, 0.01));
+    expect(hovered.height, closeTo(CLSlider.hoverLineHeight, 0.01));
+
+    await gesture.down(center);
+    await tester.pumpAndSettle();
+    final pressed = _handle(tester);
+    expect(pressed.width, closeTo(CLSlider.pressLineWidth, 0.01));
+    expect(pressed.height, closeTo(CLSlider.pressLineHeight, 0.01));
+    expect(pressed.width, lessThan(hovered.width!));
+    expect(pressed.height, lessThan(hovered.height!));
+
+    await gesture.up();
+  });
+
   testWidgets(
     'hovering on the right side of the handle at value 0 does not flicker',
     (tester) async {

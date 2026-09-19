@@ -89,11 +89,12 @@ class CLSlider extends StatefulWidget {
   static const double thumbWidth = 20;
   static const double thumbHeight = 12;
 
-  /// The handle under the pointer, and while it is being dragged.
+  /// The handle under the pointer, and while it is being dragged. Pressing
+  /// contracts the hover line slightly instead of making it grow.
   static const double hoverLineWidth = 3;
   static const double hoverLineHeight = 20;
-  static const double pressLineWidth = 4;
-  static const double pressLineHeight = 24;
+  static const double pressLineWidth = 2.5;
+  static const double pressLineHeight = 18;
 
   /// The distance the track keeps from the handle — [CLProgressBar]'s gap.
   static const double gap = 4;
